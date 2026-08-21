@@ -1,0 +1,22 @@
+{
+  "name": "gatsi-comms-suite",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "web": "npm run dev --workspace @gatsi/web",
+    "mobile": "npm run start --workspace @gatsi/mobile",
+    "doctor": "expo-doctor apps/mobile",
+    "build:web": "npm run build --workspace @gatsi/web",
+    "check": "npm run check --workspace @gatsi/domain && npm run check --workspace @gatsi/mobile && npm run check --workspace @gatsi/web"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "expo-doctor": "^1.20.2"
+  }
+}

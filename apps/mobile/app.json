@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "Gatsi Comms",
+    "slug": "gatsi-comms",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "gatsicomms",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "zw.co.gatsicomms.app"
+    },
+    "android": {
+      "package": "zw.co.gatsicomms.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#008D4C"
+      }
+    }
+  }
+}
