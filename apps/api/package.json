@@ -10,6 +10,7 @@
     "migrate": "node --env-file-if-exists=.env src/migrate.mjs"
   },
   "dependencies": {
+    "@vercel/functions": "^3.9.5",
     "pg": "^8.23.0"
   }
 }

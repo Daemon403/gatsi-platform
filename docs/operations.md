@@ -2,15 +2,15 @@
 
 ## Environments
 
-Use `develop` for staging and `main` for production. Each environment has its own API, PostgreSQL database, CORS allowlist, notification endpoint, monitoring endpoint and token secrets. Never share databases or secrets between environments.
+Vercel hosts the web client and API together. Production uses the canonical Vercel domain; Preview is the staging target. Use a dedicated Neon branch and separate token secrets for Preview before exposing it to testers. Never use Preview for destructive production-data testing.
 
 ## Database migrations
 
-The API applies pending versioned SQL migrations transactionally during startup. They can also be run explicitly with `npm run migrate --workspace @gatsi/api`. Never edit a migration after it has reached staging; create the next numbered migration.
+The Vercel production build applies pending versioned SQL migrations transactionally through `DATABASE_URL_UNPOOLED`. Preview builds do not migrate the production database. Local API startup also applies migrations, and they can be run explicitly with `npm run migrate --workspace @gatsi/api`. Never edit a migration after it has reached staging; create the next numbered migration.
 
 ## Backups and restoration
 
-GitHub Actions creates a nightly custom-format `pg_dump` retained for 30 days. Render's managed PostgreSQL backups should also be enabled. Test restoration quarterly in an isolated database:
+GitHub Actions creates a nightly custom-format `pg_dump` retained for 30 days once `PRODUCTION_DATABASE_URL` is configured in the protected GitHub production environment. Keep Neon restore protection enabled for the production branch. Test restoration quarterly in an isolated database:
 
 ```bash
 createdb gatsi_restore_test
@@ -30,7 +30,7 @@ Rotate `NOTIFICATION_WEBHOOK_SECRET_CURRENT` with the same current/previous over
 
 ## Monitoring and incident response
 
-Set `ERROR_WEBHOOK_URL` to the production error collector. The API emits structured JSON logs and sends uncaught/request errors to this endpoint. Configure alerts for health-check failures, HTTP 5xx spikes, repeated login throttling, database saturation and notification delivery failures. Audit records are available to administrators at `GET /api/audit`.
+Vercel captures the API's structured serverless logs. Set `ERROR_WEBHOOK_URL` when an external error collector is available; only unexpected server failures are forwarded, while expected 4xx responses remain warnings. Configure alerts for health-check failures, HTTP 5xx spikes, repeated login throttling, database saturation and notification delivery failures. Audit records are available to administrators at `GET /api/audit`.
 
 ## Required GitHub configuration
 
