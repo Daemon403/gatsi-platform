@@ -24,6 +24,12 @@
         "projectId": "a3e2e189-e802-4893-a97d-7f2814100c0b"
       }
     },
-    "owner": "cicada404"
+    "owner": "cicada404",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/a3e2e189-e802-4893-a97d-7f2814100c0b"
+    }
   }
 }

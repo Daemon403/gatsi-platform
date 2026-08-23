@@ -119,7 +119,7 @@ npm run build:web
 
 ## Production backend
 
-Both clients use the authenticated API in `apps/api`. Passwords are salted and hashed, refresh tokens rotate, login attempts are rate limited, customer data is role/branch scoped, and security events are written to PostgreSQL audit logs. See `docs/operations.md` for migrations, backups, monitoring and secret rotation.
+Both clients use the authenticated API in `apps/api`. Passwords are salted and hashed, refresh tokens rotate, login attempts are rate limited, customer data is role/branch scoped, and security events are written to PostgreSQL audit logs. When no email/SMS provider is configured, a newly created customer stays locked until an authenticated administrator explicitly verifies the account from the customer screen. See `docs/operations.md` for migrations, backups, monitoring and secret rotation.
 
 ## Notable workflows
 

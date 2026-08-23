@@ -32,6 +32,10 @@ Rotate `NOTIFICATION_WEBHOOK_SECRET_CURRENT` with the same current/previous over
 
 Vercel captures the API's structured serverless logs. Set `ERROR_WEBHOOK_URL` when an external error collector is available; only unexpected server failures are forwarded, while expected 4xx responses remain warnings. Configure alerts for health-check failures, HTTP 5xx spikes, repeated login throttling, database saturation and notification delivery failures. Audit records are available to administrators at `GET /api/audit`.
 
+## Account verification delivery
+
+Set `NOTIFICATION_WEBHOOK_URL` to deliver email/SMS verification tokens for newly created customer accounts. Until a provider is configured, the creating administrator must explicitly verify the account from the customer screen. The fallback requires an authenticated administrator, consumes outstanding verification tokens and writes an audit record; accounts are never activated silently.
+
 ## Required GitHub configuration
 
 Create protected `staging` and `production` GitHub environments. Add `PRODUCTION_DATABASE_URL` only to the production environment. Require the CI workflow and an approving reviewer before merging to `main` or deploying production.
