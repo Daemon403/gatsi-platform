@@ -40,6 +40,10 @@ export type User = {
   password?: string;
   verified?: boolean;
   active?: boolean;
+  archivedAt?: string;
+  archivedByUserId?: string;
+  restoredAt?: string;
+  restoredByUserId?: string;
 };
 
 export type CustomerMeasurements = {
@@ -182,4 +186,8 @@ export type AppAction =
   | { type: 'ADJUST_INVENTORY'; itemId: string; delta: number; userId: string }
   | { type: 'CLOCK_TOGGLE'; userId: string }
   | { type: 'CREATE_CUSTOMER'; customer: Customer; user: User }
+  | { type: 'CREATE_STAFF'; user: User }
+  | { type: 'ARCHIVE_STAFF'; userId: string }
+  | { type: 'RESTORE_STAFF'; userId: string; branchIds?: string[]; password?: string }
+  | { type: 'UPDATE_STAFF_BRANCHES'; userId: string; branchIds: string[] }
   | { type: 'RESET_DEMO' };

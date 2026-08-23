@@ -27,7 +27,7 @@ export function NewOrderPage() {
     event.preventDefault();
     if (!customerId || !description.trim()) return;
     const id = makeId('order');
-    const order: Order = { id, number: orderNumber(state), branchId, customerId, assignedStaffId: user.role === 'staff' ? user.id : state.users.find((item) => item.role === 'staff' && item.branchIds.includes(branchId))?.id, items: [{ id: makeId('item'), serviceId, description: description.trim(), quantity, unitPrice: service.price }], status: 'received', priority: urgent ? 'urgent' : 'normal', intakeMethod: 'walk_in', createdAt: new Date().toISOString(), dueAt, notes, discount, deliveryFee: 0, events: [{ id: makeId('event'), status: 'received', at: new Date().toISOString(), byUserId: user.id }] };
+    const order: Order = { id, number: orderNumber(state), branchId, customerId, assignedStaffId: user.role === 'staff' ? user.id : state.users.find((item) => item.role === 'staff' && item.active !== false && item.branchIds.includes(branchId))?.id, items: [{ id: makeId('item'), serviceId, description: description.trim(), quantity, unitPrice: service.price }], status: 'received', priority: urgent ? 'urgent' : 'normal', intakeMethod: 'walk_in', createdAt: new Date().toISOString(), dueAt, notes, discount, deliveryFee: 0, events: [{ id: makeId('event'), status: 'received', at: new Date().toISOString(), byUserId: user.id }] };
     dispatch({ type: 'CREATE_ORDER', order });
     navigate(`/orders/${id}`);
   };

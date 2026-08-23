@@ -86,6 +86,83 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
     }
     case 'CREATE_CUSTOMER':
       return { ...state, customers: [action.customer, ...state.customers], users: [{ ...action.user, verified: true, active: true }, ...state.users] };
+    case 'CREATE_STAFF': {
+      const { password: _password, ...incoming } = action.user;
+      const user = { ...incoming, role: 'staff' as const, active: true, verified: true, clockedIn: false };
+      return {
+        ...state,
+        users: [user, ...state.users],
+        activities: [activity(state, {
+          branchId: user.branchIds[0] ?? state.activeBranchId,
+          userId: state.activeUserId ?? 'user-admin',
+          message: `added ${user.name} to the team`,
+          kind: 'staff',
+        }), ...state.activities],
+      };
+    }
+    case 'ARCHIVE_STAFF': {
+      const target = state.users.find((item) => item.id === action.userId && item.role === 'staff');
+      if (!target || target.active === false) return state;
+      const archivedAt = new Date().toISOString();
+      return {
+        ...state,
+        users: state.users.map((item) => item.id === action.userId ? {
+          ...item,
+          active: false,
+          clockedIn: false,
+          archivedAt,
+          archivedByUserId: state.activeUserId ?? undefined,
+          restoredAt: undefined,
+          restoredByUserId: undefined,
+        } : item),
+        activities: [activity(state, {
+          branchId: target.branchIds[0] ?? state.activeBranchId,
+          userId: state.activeUserId ?? 'user-admin',
+          message: `archived ${target.name}'s team account`,
+          kind: 'staff',
+        }), ...state.activities],
+      };
+    }
+    case 'RESTORE_STAFF': {
+      const target = state.users.find((item) => item.id === action.userId && item.role === 'staff');
+      if (!target || target.active !== false) return state;
+      const restoredAt = new Date().toISOString();
+      return {
+        ...state,
+        users: state.users.map((item) => {
+          if (item.id !== action.userId) return item;
+          const { archivedAt: _archivedAt, archivedByUserId: _archivedByUserId, ...preserved } = item;
+          return {
+            ...preserved,
+            branchIds: action.branchIds ?? item.branchIds,
+            active: true,
+            clockedIn: false,
+            restoredAt,
+            restoredByUserId: state.activeUserId ?? undefined,
+          };
+        }),
+        activities: [activity(state, {
+          branchId: action.branchIds?.[0] ?? target.branchIds[0] ?? state.activeBranchId,
+          userId: state.activeUserId ?? 'user-admin',
+          message: `restored ${target.name}'s team account`,
+          kind: 'staff',
+        }), ...state.activities],
+      };
+    }
+    case 'UPDATE_STAFF_BRANCHES': {
+      const target = state.users.find((item) => item.id === action.userId && item.role === 'staff' && item.active !== false);
+      if (!target) return state;
+      return {
+        ...state,
+        users: state.users.map((item) => item.id === action.userId ? { ...item, branchIds: action.branchIds } : item),
+        activities: [activity(state, {
+          branchId: action.branchIds[0] ?? target.branchIds[0] ?? state.activeBranchId,
+          userId: state.activeUserId ?? 'user-admin',
+          message: `updated ${target.name}'s branch assignment`,
+          kind: 'staff',
+        }), ...state.activities],
+      };
+    }
     case 'RESET_DEMO':
       return createDemoState();
     default:

@@ -37,7 +37,7 @@ export function CreateOrderScreen() {
       number: orderNumber(state),
       branchId,
       customerId,
-      assignedStaffId: user.role === 'staff' ? user.id : state.users.find((item) => item.role === 'staff' && item.branchIds.includes(branchId))?.id,
+      assignedStaffId: user.role === 'staff' ? user.id : state.users.find((item) => item.role === 'staff' && item.active !== false && item.branchIds.includes(branchId))?.id,
       status: 'received',
       priority: urgent ? 'urgent' : 'normal',
       intakeMethod: 'walk_in',
