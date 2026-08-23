@@ -19,7 +19,7 @@ export function CustomersPage() {
     event.preventDefault();
     const customerId = makeId('customer'); const username = firstName.trim(); const password = lastName.trim().toUpperCase();
     const values = Object.fromEntries(Object.entries(measurements).filter(([, value]) => value !== '').map(([key, value]) => [key, Number(value)]));
-    dispatch({ type: 'CREATE_CUSTOMER', customer: { id: customerId, name: `${firstName.trim()} ${lastName.trim()}`, phone, email, address, joinedAt: new Date().toISOString(), branchId, loyaltyPoints: 0, measurements: { unit, ...values } }, user: { id: makeId('user'), role: 'customer', name: `${firstName.trim()} ${lastName.trim()}`, email, phone, branchIds: [branchId], customerId, avatarColor: '#0EA5A4', username, password } });
+    dispatch({ type: 'CREATE_CUSTOMER', customer: { id: customerId, name: `${firstName.trim()} ${lastName.trim()}`, phone, email, address, joinedAt: new Date().toISOString(), branchId, loyaltyPoints: 0, measurements: { unit, ...values } }, user: { id: makeId('user'), role: 'customer', name: `${firstName.trim()} ${lastName.trim()}`, email, phone, branchIds: [branchId], customerId, avatarColor: '#0EA5A4', username, password, verified: true, active: true } });
     setCredentials({ username, password }); setAdding(false); setFirstName(''); setLastName(''); setPhone(''); setEmail(''); setAddress(''); setMeasurements({});
   };
   const measurementFields = ['height', 'neck', 'chest', 'waist', 'hips', 'shoulder', 'sleeve', 'inseam'];

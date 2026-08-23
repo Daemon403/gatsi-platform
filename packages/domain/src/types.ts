@@ -38,6 +38,8 @@ export type User = {
   lastClockIn?: string;
   username?: string;
   password?: string;
+  verified?: boolean;
+  active?: boolean;
 };
 
 export type CustomerMeasurements = {

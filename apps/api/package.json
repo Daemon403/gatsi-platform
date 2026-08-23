@@ -1,0 +1,15 @@
+{
+  "name": "@gatsi/api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/server.mjs",
+    "dev": "node --env-file-if-exists=.env --watch src/server.mjs",
+    "check": "node --check src/server.mjs && node --check src/db.mjs && node --check src/migrate.mjs",
+    "migrate": "node --env-file-if-exists=.env src/migrate.mjs"
+  },
+  "dependencies": {
+    "pg": "^8.23.0"
+  }
+}

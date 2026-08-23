@@ -42,3 +42,10 @@ Desktop.ini
 *.temp
 *.swp
 *~
+
+# Local backend database
+apps/api/data/*.json
+apps/api/data/*.tmp
+
+.vercel
+.env*

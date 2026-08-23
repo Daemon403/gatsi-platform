@@ -8,13 +8,22 @@
     "scheme": "gatsicomms",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "zw.co.gatsicomms.app"
+      "bundleIdentifier": "zw.co.gatsicomms.app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "zw.co.gatsicomms.app",
       "adaptiveIcon": {
         "backgroundColor": "#008D4C"
       }
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "a3e2e189-e802-4893-a97d-7f2814100c0b"
+      }
+    },
+    "owner": "cicada404"
   }
 }

@@ -85,7 +85,7 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
       };
     }
     case 'CREATE_CUSTOMER':
-      return { ...state, customers: [action.customer, ...state.customers], users: [action.user, ...state.users] };
+      return { ...state, customers: [action.customer, ...state.customers], users: [{ ...action.user, verified: true, active: true }, ...state.users] };
     case 'RESET_DEMO':
       return createDemoState();
     default:

@@ -24,7 +24,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className="brand"><span className="brand-mark">G</span><div><strong>Gatsi Comms</strong><small>Textile & Dry Cleaning</small></div><button className="mobile-close" onClick={() => setOpen(false)}><X /></button></div>
       <nav>{navigation(user.role).map((item) => <NavLink onClick={() => setOpen(false)} key={item.path} to={item.path} end={item.path === '/'} className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>{item.icon}<span>{item.label}</span></NavLink>)}</nav>
       <div className="sidebar-support"><Scissors /><strong>Care command centre</strong><span>Tag, clean, finish and deliver every order on time.</span></div>
-      <button className="nav-link logout" onClick={() => dispatch({ type: 'LOGOUT' })}><LogOut /><span>Switch demo role</span></button>
+      <button className="nav-link logout" onClick={() => dispatch({ type: 'LOGOUT' })}><LogOut /><span>Sign out</span></button>
     </aside>
     {open ? <button aria-label="Close menu" className="sidebar-scrim" onClick={() => setOpen(false)} /> : null}
     <div className="app-main">

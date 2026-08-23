@@ -46,11 +46,11 @@ export const createDemoState = (): AppState => ({
     { id: 'branch-murewa', name: 'Murewa Branch', shortName: 'Murewa', address: 'Stand 41, Murewa Centre', phone: '+263 77 410 2203', managerId: 'user-tinashe', active: true },
   ],
   users: [
-    { id: 'user-admin', role: 'admin', name: 'Promise Gatsi', email: 'admin@gatsicomms.co.zw', phone: '+263 77 100 9001', branchIds: ['branch-cbd', 'branch-avondale', 'branch-murewa'], jobTitle: 'Managing Director', avatarColor: '#008D4C' },
-    { id: 'user-mary', role: 'staff', name: 'Mary Dube', email: 'mary@gatsicomms.co.zw', phone: '+263 77 100 9002', branchIds: ['branch-avondale'], jobTitle: 'Branch Supervisor', avatarColor: '#6D4AFF', clockedIn: true, lastClockIn: '2026-08-21T06:58:00.000Z' },
-    { id: 'user-tinashe', role: 'staff', name: 'Tinashe Moyo', email: 'tinashe@gatsicomms.co.zw', phone: '+263 77 100 9003', branchIds: ['branch-murewa'], jobTitle: 'Cleaning Technician', avatarColor: '#1677FF', clockedIn: false },
-    { id: 'user-rudo-staff', role: 'staff', name: 'Rudo Nyathi', email: 'rudo.staff@gatsicomms.co.zw', phone: '+263 77 100 9004', branchIds: ['branch-cbd'], jobTitle: 'Front Desk & Quality', avatarColor: '#F59E0B', clockedIn: true, lastClockIn: '2026-08-21T07:16:00.000Z' },
-    { id: 'user-customer', role: 'customer', name: 'Rudo Chikowore', email: 'rudo@example.com', phone: '+263 77 555 0199', branchIds: ['branch-cbd'], customerId: 'customer-rudo', avatarColor: '#0EA5A4' },
+    { id: 'user-admin', role: 'admin', name: 'Promise Gatsi', email: 'admin@gatsicomms.co.zw', phone: '+263 77 100 9001', branchIds: ['branch-cbd', 'branch-avondale', 'branch-murewa'], jobTitle: 'Managing Director', avatarColor: '#008D4C', username: 'Promise', password: 'GATSI', verified: true, active: true },
+    { id: 'user-mary', role: 'staff', name: 'Mary Dube', email: 'mary@gatsicomms.co.zw', phone: '+263 77 100 9002', branchIds: ['branch-avondale'], jobTitle: 'Branch Supervisor', avatarColor: '#6D4AFF', clockedIn: true, lastClockIn: '2026-08-21T06:58:00.000Z', username: 'Mary', password: 'DUBE', verified: true, active: true },
+    { id: 'user-tinashe', role: 'staff', name: 'Tinashe Moyo', email: 'tinashe@gatsicomms.co.zw', phone: '+263 77 100 9003', branchIds: ['branch-murewa'], jobTitle: 'Cleaning Technician', avatarColor: '#1677FF', clockedIn: false, username: 'Tinashe', password: 'MOYO', verified: true, active: true },
+    { id: 'user-rudo-staff', role: 'staff', name: 'Rudo Nyathi', email: 'rudo.staff@gatsicomms.co.zw', phone: '+263 77 100 9004', branchIds: ['branch-cbd'], jobTitle: 'Front Desk & Quality', avatarColor: '#F59E0B', clockedIn: true, lastClockIn: '2026-08-21T07:16:00.000Z', username: 'RudoStaff', password: 'NYATHI', verified: true, active: true },
+    { id: 'user-customer', role: 'customer', name: 'Rudo Chikowore', email: 'rudo@example.com', phone: '+263 77 555 0199', branchIds: ['branch-cbd'], customerId: 'customer-rudo', avatarColor: '#0EA5A4', username: 'Rudo', password: 'CHIKOWORE', verified: true, active: true },
   ],
   customers: [
     { id: 'customer-rudo', name: 'Rudo Chikowore', phone: '+263 77 555 0199', email: 'rudo@example.com', address: '32 Fife Avenue, Harare', joinedAt: '2026-01-18T09:00:00.000Z', branchId: 'branch-cbd', loyaltyPoints: 185 },
