@@ -28,11 +28,14 @@ export function MoreScreen() {
 
   return <Screen>
     <AppHeader title="More" subtitle="Account and workspace settings" />
+    <TouchableOpacity activeOpacity={0.8} onPress={() => navigation.navigate('Profile')}>
     <Card style={styles.profile}>
       <View style={[styles.avatar, { backgroundColor: currentUser.avatarColor }]}><Text style={styles.avatarText}>{initials(currentUser.name)}</Text></View>
       <View style={styles.flex}><Text style={styles.name}>{currentUser.name}</Text><Text style={styles.role}>{currentUser.role} - {currentUser.jobTitle ?? currentUser.email}</Text><Text style={styles.email}>{currentUser.email}</Text></View>
       <View style={styles.verified}><Feather name="check" size={14} color="#fff" /></View>
     </Card>
+    </TouchableOpacity>
+    <Text style={styles.editHint}>Tap your profile to edit your details</Text>
 
     {canViewTeam ? <>
       <SectionTitle title="Management" />
@@ -91,6 +94,7 @@ const styles = StyleSheet.create({
   role: { color: colors.primary, fontSize: 11, fontWeight: '700', textTransform: 'capitalize', marginTop: 4 },
   email: { color: colors.muted, fontSize: 10, marginTop: 3 },
   verified: { width: 25, height: 25, borderRadius: 13, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+  editHint: { color: colors.primary, fontSize: 11, fontWeight: '700', textAlign: 'center', marginTop: -6, marginBottom: 10 },
   menu: { paddingHorizontal: 14 },
   menuItem: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
   menuIcon: { width: 39, height: 39, borderRadius: 12, backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center' },
