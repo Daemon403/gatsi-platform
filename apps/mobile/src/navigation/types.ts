@@ -9,6 +9,7 @@ export type RootStackParamList = {
   ServicesManagement: undefined;
   Notifications: undefined;
   Profile: undefined;
+  OperationsSummaries: undefined;
 };
 
 export type TabParamList = {

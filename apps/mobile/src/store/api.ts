@@ -7,6 +7,7 @@ export const apiLogout=async()=>{try{await raw('/auth/logout',{method:'POST'});}
 export const apiRequestPasswordReset=(identifier:string)=>raw<{ok:boolean;debugToken?:string}>('/auth/password-reset/request',{method:'POST',body:JSON.stringify({identifier})},false);
 export const apiConfirmPasswordReset=(token:string,newPassword:string)=>raw<{ok:boolean}>('/auth/password-reset/confirm',{method:'POST',body:JSON.stringify({token,newPassword})},false);
 export const apiConfirmVerification=(token:string)=>raw<{ok:boolean}>('/auth/verification/confirm',{method:'POST',body:JSON.stringify({token})},false);
+export const apiChangePassword=(currentPassword:string,newPassword:string)=>raw<{ok:boolean}>('/account/password',{method:'POST',body:JSON.stringify({currentPassword,newPassword})});
 export const apiVerifyCustomer=(userId:string)=>raw<AppState>('/admin/customers/verify',{method:'POST',body:JSON.stringify({userId})});
 export type OperationsSummariesResponse={items:DailyOperationsSummary[]};
 export type GenerateOperationsSummaryResponse={summary:DailyOperationsSummary};

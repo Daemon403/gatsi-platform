@@ -24,6 +24,9 @@ const metrics: Array<{ key: MetricKey; label: string; icon: keyof typeof Feather
   { key: 'activeStaff', label: 'Active staff', icon: 'users' },
   { key: 'lowStockItems', label: 'Low stock', icon: 'package', tone: 'red' },
   { key: 'operationalEvents', label: 'Operations events', icon: 'activity', tone: 'blue' },
+  { key: 'clothingSales', label: 'Clothing sales', icon: 'shopping-cart', tone: 'blue' },
+  { key: 'clothingUnitsSold', label: 'Clothing units sold', icon: 'shopping-bag' },
+  { key: 'clothingRevenue', label: 'Clothing revenue', icon: 'dollar-sign', money: true },
 ];
 
 const branchMetricKeys: MetricKey[] = ['ordersCreated', 'ordersCollected', 'activeOrders', 'revenueCollected', 'outstandingBalance', 'activeStaff'];
@@ -201,7 +204,8 @@ function ErrorNotice({ message, retry }: { message: string; retry?: () => void }
 }
 
 function formatMetric(value: OperationsMetrics, metric: typeof metrics[number]) {
-  return metric.money ? money(value[metric.key]) : value[metric.key].toLocaleString();
+  const amount = Number(value[metric.key] ?? 0);
+  return metric.money ? money(amount) : amount.toLocaleString();
 }
 
 function reportDate(date: string) {

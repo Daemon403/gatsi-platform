@@ -58,6 +58,12 @@ export function MoreScreen() {
           detail="Edit pricing, turnaround times and catalogue availability"
           onPress={() => navigation.navigate('ServicesManagement')}
         /> : null}
+        {currentUser.role === 'admin' ? <MenuItem
+          icon="bar-chart-2"
+          title="Daily operations summaries"
+          detail="Review permanent completed-day snapshots across all branches"
+          onPress={() => navigation.navigate('OperationsSummaries')}
+        /> : null}
       </Card>
     </> : <>
       <SectionTitle title="Help & contact" />

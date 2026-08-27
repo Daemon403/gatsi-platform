@@ -12,6 +12,7 @@ import { HomeScreen } from '../screens/HomeScreen';
 import { LoginScreen } from '../screens/LoginScreen';
 import { MoreScreen } from '../screens/MoreScreen';
 import { NotificationsScreen } from '../screens/NotificationsScreen';
+import { OperationsSummariesScreen } from '../screens/OperationsSummariesScreen';
 import { OrderDetailScreen } from '../screens/OrderDetailScreen';
 import { OrdersScreen } from '../screens/OrdersScreen';
 import { PickupRequestScreen } from '../screens/PickupRequestScreen';
@@ -75,6 +76,7 @@ export function AppNavigation() {
         {role !== 'customer' ? <Root.Screen name="Team" component={TeamScreen} /> : null}
         {role === 'admin' ? <Root.Screen name="Branches" component={BranchesScreen} /> : null}
         {role === 'admin' ? <Root.Screen name="ServicesManagement" component={ServicesManagementScreen} /> : null}
+        {role === 'admin' ? <Root.Screen name="OperationsSummaries" component={OperationsSummariesScreen} /> : null}
       </Root.Navigator>
     </NavigationContainer>
   );
