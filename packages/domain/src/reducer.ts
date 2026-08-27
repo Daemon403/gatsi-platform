@@ -128,6 +128,10 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
     }
     case 'CREATE_CUSTOMER':
       return { ...state, customers: [action.customer, ...state.customers], users: [{ ...action.user, verified: true, active: true }, ...state.users] };
+    case 'CREATE_BRANCH':
+      return { ...state, branches: [action.branch, ...state.branches] };
+    case 'CREATE_SERVICE':
+      return { ...state, services: [action.service, ...state.services] };
     case 'UPDATE_BRANCH': {
       const target = state.branches.find((branch) => branch.id === action.branchId);
       if (!target) return state;

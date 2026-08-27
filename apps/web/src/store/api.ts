@@ -1,4 +1,4 @@
-import type { AppAction, AppState } from '@gatsi/domain';
+import type { AppAction, AppState, DailyOperationsSummary } from '@gatsi/domain';
 const API_ORIGIN = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:4000' : '');
 const API_URL = `${API_ORIGIN.replace(/\/$/, '')}/api`; const ACCESS='gatsi-access-token',REFRESH='gatsi-refresh-token';
 type AuthResponse={accessToken?:string;refreshToken?:string;token?:string;state:AppState};
@@ -10,3 +10,5 @@ export const apiRequestPasswordReset=(identifier:string)=>raw<{ok:boolean;debugT
 export const apiConfirmPasswordReset=(token:string,newPassword:string)=>raw<{ok:boolean}>('/auth/password-reset/confirm',{method:'POST',body:JSON.stringify({token,newPassword})},false);
 export const apiConfirmVerification=(token:string)=>raw<{ok:boolean}>('/auth/verification/confirm',{method:'POST',body:JSON.stringify({token})},false);
 export const apiVerifyCustomer=(userId:string)=>raw<AppState>('/admin/customers/verify',{method:'POST',body:JSON.stringify({userId})});
+export const apiOperationsSummaries=()=>raw<{items:DailyOperationsSummary[]}>('/admin/operations-summaries');
+export const apiGenerateOperationsSummary=()=>raw<{summary:DailyOperationsSummary}>('/admin/operations-summaries/generate',{method:'POST',body:'{}'});

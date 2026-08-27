@@ -179,6 +179,37 @@ export type AppNotification = {
   readByUserIds: string[];
 };
 
+export type OperationsMetrics = {
+  ordersCreated: number;
+  ordersCollected: number;
+  activeOrders: number;
+  urgentOrders: number;
+  paymentsRecorded: number;
+  revenueCollected: number;
+  outstandingBalance: number;
+  pickupsRequested: number;
+  pendingPickups: number;
+  activeStaff: number;
+  lowStockItems: number;
+  operationalEvents: number;
+};
+
+export type BranchOperationsSummary = OperationsMetrics & {
+  branchId: string;
+  branchName: string;
+};
+
+export type DailyOperationsSummary = {
+  id: string;
+  date: string;
+  timezone: 'Africa/Harare';
+  windowStart: string;
+  windowEnd: string;
+  generatedAt: string;
+  totals: OperationsMetrics;
+  branches: BranchOperationsSummary[];
+};
+
 export type AppState = {
   version: number;
   activeUserId: string | null;
@@ -208,6 +239,8 @@ export type AppAction =
   | { type: 'ADJUST_INVENTORY'; itemId: string; delta: number; userId: string }
   | { type: 'CLOCK_TOGGLE'; userId: string }
   | { type: 'CREATE_CUSTOMER'; customer: Customer; user: User }
+  | { type: 'CREATE_BRANCH'; branch: Branch }
+  | { type: 'CREATE_SERVICE'; service: Service }
   | { type: 'UPDATE_BRANCH'; branchId: string; updates: BranchUpdate }
   | { type: 'UPDATE_SERVICE'; serviceId: string; updates: ServiceUpdate }
   | { type: 'UPDATE_CUSTOMER'; customerId: string; updates: CustomerUpdate }

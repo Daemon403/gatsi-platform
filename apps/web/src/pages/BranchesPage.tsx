@@ -1,5 +1,5 @@
-import { branchRevenue, getActiveUser, money, orderBalance, type AppAction, type Branch } from '@gatsi/domain';
-import { Building2, CheckCircle2, CircleOff, DollarSign, MapPin, Package2, Pencil, Phone, UsersRound } from 'lucide-react';
+import { branchRevenue, getActiveUser, makeId, money, orderBalance, type AppAction, type Branch } from '@gatsi/domain';
+import { Building2, CheckCircle2, CircleOff, DollarSign, MapPin, Package2, Pencil, Phone, Plus, RotateCcw, Trash2, UsersRound } from 'lucide-react';
 import { useState } from 'react';
 import { Button, Card, FormField, PageTitle } from '../components/ui';
 import { useAppStore } from '../store/AppStore';
@@ -22,6 +22,17 @@ function toDraft(branch: Branch): BranchDraft {
   };
 }
 
+function newBranchDraft(managerId: string): BranchDraft {
+  return {
+    name: '',
+    shortName: '',
+    address: '',
+    phone: '',
+    managerId,
+    active: true,
+  };
+}
+
 export function BranchesPage() {
   const { state } = useAppStore();
   const currentUser = getActiveUser(state);
@@ -32,18 +43,33 @@ export function BranchesPage() {
 
 function AdminBranchesPage() {
   const { state, dispatch } = useAppStore();
+  const currentUser = getActiveUser(state)!;
   const [editingBranchId, setEditingBranchId] = useState<string | null>(null);
   const [draft, setDraft] = useState<BranchDraft | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
+  const [busyBranchId, setBusyBranchId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState('');
+  const isCreating = draft !== null && editingBranchId === null;
   const managers = state.users.filter((user) => user.active !== false && (
-    user.role === 'admin' || (user.role === 'staff' && user.verified === true && Boolean(editingBranchId && user.branchIds.includes(editingBranchId)))
+    (user.role === 'admin' && user.verified === true)
+    || (user.role === 'staff' && user.verified === true && Boolean(editingBranchId && user.branchIds.includes(editingBranchId)))
   ));
+
+  const beginCreate = () => {
+    const initialManagerId = managers.find((manager) => manager.id === currentUser.id)?.id ?? managers[0]?.id ?? '';
+    setEditingBranchId(null);
+    setDraft(newBranchDraft(initialManagerId));
+    setFormError('');
+    setActionError('');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   const beginEdit = (branch: Branch) => {
     setEditingBranchId(branch.id);
     setDraft(toDraft(branch));
     setFormError('');
+    setActionError('');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -61,7 +87,7 @@ function AdminBranchesPage() {
 
   const saveBranch = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!draft || !editingBranchId || saving) return;
+    if (!draft || saving) return;
 
     const updates: BranchDraft = {
       ...draft,
@@ -80,12 +106,14 @@ function AdminBranchesPage() {
     }
 
     const selectedAdminBranchId = state.activeBranchId;
-    const action: AppAction = { type: 'UPDATE_BRANCH', branchId: editingBranchId, updates };
+    const action: AppAction = editingBranchId
+      ? { type: 'UPDATE_BRANCH', branchId: editingBranchId, updates }
+      : { type: 'CREATE_BRANCH', branch: { id: makeId('branch'), ...updates } };
     setSaving(true);
     setFormError('');
     try {
       const remoteState = await apiAction(action);
-      const activeBranchId = !updates.active && selectedAdminBranchId === editingBranchId ? 'all' : selectedAdminBranchId;
+      const activeBranchId = editingBranchId && !updates.active && selectedAdminBranchId === editingBranchId ? 'all' : selectedAdminBranchId;
       dispatch({ type: 'HYDRATE', state: { ...remoteState, activeBranchId } });
       setEditingBranchId(null);
       setDraft(null);
@@ -96,22 +124,48 @@ function AdminBranchesPage() {
     }
   };
 
-  return <>
-    <PageTitle eyebrow="Network" title="Branches" description="Edit branch details and compare order volume, teams, revenue and collection risk." />
+  const setBranchActive = async (branch: Branch, active: boolean) => {
+    if (busyBranchId || saving || branch.active === active) return;
+    if (!active && !window.confirm(`Remove ${branch.name}? Its history will be retained and it can be restored later.`)) return;
 
-    {draft && editingBranchId ? <Card className="inline-form admin-edit-form">
-      <div className="card-heading"><div><span className="eyebrow">Branch settings</span><h2>Edit {draft.name}</h2></div></div>
+    const selectedAdminBranchId = state.activeBranchId;
+    setBusyBranchId(branch.id);
+    setActionError('');
+    try {
+      const action: AppAction = { type: 'UPDATE_BRANCH', branchId: branch.id, updates: { ...toDraft(branch), active } };
+      const remoteState = await apiAction(action);
+      const activeBranchId = !active && selectedAdminBranchId === branch.id ? 'all' : selectedAdminBranchId;
+      dispatch({ type: 'HYDRATE', state: { ...remoteState, activeBranchId } });
+      if (editingBranchId === branch.id) {
+        setEditingBranchId(null);
+        setDraft(null);
+        setFormError('');
+      }
+    } catch (error) {
+      setActionError(errorMessage(error, `The branch could not be ${active ? 'restored' : 'removed'}.`));
+    } finally {
+      setBusyBranchId(null);
+    }
+  };
+
+  return <>
+    <PageTitle eyebrow="Network" title="Branches" description="Add, edit, remove or restore branches and compare operational performance." actions={<Button disabled={saving || Boolean(busyBranchId)} onClick={beginCreate}><Plus /> Add branch</Button>} />
+
+    {draft ? <Card className="inline-form admin-edit-form">
+      <div className="card-heading"><div><span className="eyebrow">Branch settings</span><h2>{isCreating ? 'Add a branch' : `Edit ${draft.name}`}</h2></div></div>
       <form className="form-grid two" onSubmit={(event) => void saveBranch(event)} aria-busy={saving}>
         <FormField label="Branch name"><input required maxLength={160} disabled={saving} value={draft.name} onChange={(event) => updateDraft('name', event.target.value)} /></FormField>
         <FormField label="Short name"><input required maxLength={80} disabled={saving} value={draft.shortName} onChange={(event) => updateDraft('shortName', event.target.value)} /></FormField>
         <FormField label="Phone"><input required type="tel" maxLength={64} disabled={saving} value={draft.phone} onChange={(event) => updateDraft('phone', event.target.value)} /></FormField>
         <FormField label="Branch manager"><select required disabled={saving} value={draft.managerId} onChange={(event) => updateDraft('managerId', event.target.value)}><option value="">Choose a manager</option>{managers.map((manager) => <option key={manager.id} value={manager.id}>{manager.name} · {manager.jobTitle ?? manager.role}</option>)}</select></FormField>
         <FormField label="Address"><textarea required maxLength={300} disabled={saving} value={draft.address} onChange={(event) => updateDraft('address', event.target.value)} /></FormField>
-        <label className={`admin-active-toggle ${draft.active ? 'selected' : ''}`}><input type="checkbox" disabled={saving} checked={draft.active} onChange={(event) => updateDraft('active', event.target.checked)} /><span>{draft.active ? <CheckCircle2 /> : <CircleOff />}</span><div><strong>{draft.active ? 'Open branch' : 'Closed branch'}</strong><small>Closed branches remain in historical records but cannot receive new work.</small></div></label>
+        <div className={`admin-active-toggle admin-created-active ${draft.active ? 'selected' : ''}`}><span>{draft.active ? <CheckCircle2 /> : <CircleOff />}</span><div><strong>{isCreating ? 'Opens immediately' : draft.active ? 'Currently open' : 'Currently removed'}</strong><small>{isCreating ? 'New branches are available for staff assignments, customers and incoming work.' : 'Use the Remove or Restore action on the branch card to change availability.'}</small></div></div>
         {formError ? <span className="login-error admin-form-error" role="alert">{formError}</span> : null}
-        <div className="form-actions"><Button type="button" variant="secondary" disabled={saving} onClick={cancelEdit}>Cancel</Button><Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save branch'}</Button></div>
+        <div className="form-actions"><Button type="button" variant="secondary" disabled={saving} onClick={cancelEdit}>Cancel</Button><Button type="submit" disabled={saving}>{saving ? 'Saving…' : isCreating ? 'Add branch' : 'Save branch'}</Button></div>
       </form>
     </Card> : null}
+
+    {actionError ? <div className="management-error" role="alert">{actionError}</div> : null}
 
     <div className="branch-grid">{state.branches.map((branch) => {
       const orders = state.orders.filter((item) => item.branchId === branch.id);
@@ -122,7 +176,7 @@ function AdminBranchesPage() {
       return <Card className={`branch-tile ${branch.active ? '' : 'record-inactive'}`} key={branch.id}>
         <div className="branch-tile-head"><span><Building2 /></span><div><strong>{branch.name}</strong><small><MapPin /> {branch.address}</small><small><Phone /> {branch.phone}</small><small><UsersRound /> Managed by {manager?.name ?? 'Unassigned'}</small></div><i className={branch.active ? '' : 'inactive'}>{branch.active ? <CheckCircle2 /> : <CircleOff />} {branch.active ? 'Open' : 'Closed'}</i></div>
         <div className="branch-kpis"><div><Package2 /><strong>{active.length}</strong><span>Active orders</span></div><div><UsersRound /><strong>{staff.length}</strong><span>Staff members</span></div><div><DollarSign /><strong>{money(branchRevenue(state, branch.id))}</strong><span>Revenue</span></div><div><DollarSign /><strong>{money(outstanding)}</strong><span>Outstanding</span></div></div>
-        <div className="record-actions"><Button variant="secondary" onClick={() => beginEdit(branch)}><Pencil /> Edit branch</Button><Button variant="ghost" onClick={() => dispatch({ type: 'SET_BRANCH', branchId: branch.id })}>Open dashboard →</Button></div>
+        <div className="record-actions"><Button variant="secondary" disabled={Boolean(busyBranchId) || saving} onClick={() => beginEdit(branch)}><Pencil /> Edit</Button>{branch.active ? <Button variant="danger" disabled={Boolean(busyBranchId) || saving} onClick={() => void setBranchActive(branch, false)}><Trash2 /> {busyBranchId === branch.id ? 'Removing…' : 'Remove'}</Button> : <Button variant="ghost" disabled={Boolean(busyBranchId) || saving} onClick={() => void setBranchActive(branch, true)}><RotateCcw /> {busyBranchId === branch.id ? 'Restoring…' : 'Restore'}</Button>}<Button variant="ghost" disabled={!branch.active || Boolean(busyBranchId) || saving} onClick={() => dispatch({ type: 'SET_BRANCH', branchId: branch.id })}>Dashboard →</Button></div>
       </Card>;
     })}</div>
   </>;

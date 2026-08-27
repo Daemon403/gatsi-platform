@@ -6,8 +6,9 @@
   "scripts": {
     "start": "node --env-file-if-exists=.env src/server.mjs",
     "dev": "node --env-file-if-exists=.env --watch src/server.mjs",
-    "check": "node --check src/server.mjs && node --check src/db.mjs && node --check src/migrate.mjs",
-    "migrate": "node --env-file-if-exists=.env src/migrate.mjs"
+    "check": "node --check src/server.mjs && node --check src/db.mjs && node --check src/migrate.mjs && node --check src/operations-summary.mjs && node --check src/generate-daily-summary.mjs",
+    "migrate": "node --env-file-if-exists=.env src/migrate.mjs",
+    "summary:daily": "node --env-file-if-exists=.env src/generate-daily-summary.mjs"
   },
   "dependencies": {
     "@vercel/functions": "^3.9.5",
