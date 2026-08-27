@@ -1,5 +1,5 @@
 import { statusSequence } from './data';
-import type { AppState, Order, OrderStatus, Role } from './types';
+import type { AppNotification, AppState, Order, OrderStatus, Role, User } from './types';
 
 export const money = (value: number) =>
   new Intl.NumberFormat('en-ZW', { style: 'currency', currency: 'USD' }).format(value);
@@ -32,8 +32,27 @@ const seededAccounts: Record<string, { username: string; password: string }> = {
   'user-customer': { username: 'Rudo', password: 'CHIKOWORE' },
 };
 
+export const normalizeNotifications = (value: unknown): AppNotification[] => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is AppNotification => Boolean(
+      item
+      && typeof item === 'object'
+      && typeof (item as AppNotification).id === 'string'
+      && typeof (item as AppNotification).title === 'string'
+      && typeof (item as AppNotification).message === 'string'
+      && typeof (item as AppNotification).at === 'string',
+    ))
+    .map((item) => ({
+      ...item,
+      recipientUserIds: Array.isArray(item.recipientUserIds) ? item.recipientUserIds.filter((id): id is string => typeof id === 'string') : [],
+      readByUserIds: Array.isArray(item.readByUserIds) ? item.readByUserIds.filter((id): id is string => typeof id === 'string') : [],
+    }));
+};
+
 export const migrateAccounts = (state: AppState): AppState => ({
   ...state,
+  notifications: normalizeNotifications(state.notifications),
   users: state.users.map((user) => {
     const seeded = seededAccounts[user.id];
     return { ...user, username: user.username ?? seeded?.username, password: user.password ?? seeded?.password, verified: user.verified ?? Boolean(user.username || seeded), active: user.active ?? true };
@@ -66,6 +85,30 @@ export const visibleOrders = (state: AppState) => {
   if (user.role === 'customer') return state.orders.filter((order) => order.customerId === user.customerId);
   if (user.role === 'staff') return state.orders.filter((order) => user.branchIds.includes(order.branchId));
   return state.activeBranchId === 'all' ? state.orders : state.orders.filter((order) => order.branchId === state.activeBranchId);
+};
+
+export const notificationRelatesToUser = (state: AppState, notification: AppNotification, user: User) => {
+  if (user.role === 'admin') return true;
+  if (notification.recipientUserIds?.includes(user.id) || notification.actorUserId === user.id) return true;
+  if (user.role === 'customer') return Boolean(user.customerId && notification.customerId === user.customerId);
+  if (user.role === 'staff' && notification.orderId) {
+    return state.orders.some((order) => order.id === notification.orderId && order.assignedStaffId === user.id);
+  }
+  return false;
+};
+
+export const visibleNotifications = (state: AppState) => {
+  const user = getActiveUser(state);
+  if (!user) return [];
+  return (state.notifications ?? [])
+    .filter((notification) => notificationRelatesToUser(state, notification, user))
+    .sort((left, right) => new Date(right.at).getTime() - new Date(left.at).getTime());
+};
+
+export const unreadNotifications = (state: AppState) => {
+  const user = getActiveUser(state);
+  if (!user) return [];
+  return visibleNotifications(state).filter((notification) => !notification.readByUserIds?.includes(user.id));
 };
 
 export const roleHomeTitle = (role: Role) => ({ admin: 'Business overview', staff: 'Today’s workspace', customer: 'Your garment care' })[role];

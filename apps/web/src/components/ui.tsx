@@ -1,4 +1,4 @@
-import { orderBalance, orderProgress, shortDate, statusLabels, type AppState, type Order, type OrderStatus } from '@gatsi/domain';
+import { getActiveUser, orderBalance, orderProgress, shortDate, statusLabels, type AppState, type Order, type OrderStatus } from '@gatsi/domain';
 import { AlertTriangle, CheckCircle2, Package2 } from 'lucide-react';
 import type { ButtonHTMLAttributes, PropsWithChildren, ReactNode } from 'react';
 import { Link } from 'react-router-dom';
@@ -21,11 +21,13 @@ export function Metric({ label, value, detail, tone = 'green', icon }: { label: 
 }
 
 export function OrderRow({ state, order }: { state: AppState; order: Order }) {
+  const currentUser = getActiveUser(state);
   const customer = state.customers.find((item) => item.id === order.customerId);
   const branch = state.branches.find((item) => item.id === order.branchId);
+  const assignedStaff = state.users.find((item) => item.id === order.assignedStaffId && item.role === 'staff');
   const progress = orderProgress(order.status);
   const balance = orderBalance(state, order);
-  return <Link className="order-row" to={`/orders/${order.id}`}><div className="order-symbol"><Package2 size={20} /></div><div className="order-main"><div className="order-title-line"><strong>{order.number}</strong><StatusPill status={order.status} /></div><span className="customer-link">{customer?.name}</span><div className="progress-line"><div className="progress-track"><i style={{ width: `${progress}%` }} /></div><b>{progress}%</b></div><div className="order-meta"><span>{branch?.shortName}</span><span>Due {shortDate(order.dueAt)}</span><span>{order.items.reduce((sum, item) => sum + item.quantity, 0)} items</span>{balance > 0 ? <em>{balance.toFixed(2)} USD due</em> : <em className="paid">Paid</em>}</div></div></Link>;
+  return <Link className="order-row" to={`/orders/${order.id}`}><div className="order-symbol"><Package2 size={20} /></div><div className="order-main"><div className="order-title-line"><strong>{order.number}</strong><StatusPill status={order.status} /></div><span className="customer-link">{customer?.name}</span><div className="progress-line"><div className="progress-track"><i style={{ width: `${progress}%` }} /></div><b>{progress}%</b></div><div className="order-meta"><span>{branch?.shortName}</span><span>Due {shortDate(order.dueAt)}</span><span>{order.items.reduce((sum, item) => sum + item.quantity, 0)} items</span>{currentUser?.role !== 'customer' ? <span>Assigned to {assignedStaff?.name ?? 'Unassigned'}</span> : null}{balance > 0 ? <em>{balance.toFixed(2)} USD due</em> : <em className="paid">Paid</em>}</div></div></Link>;
 }
 
 export function Empty({ title, body, warning = false }: { title: string; body: string; warning?: boolean }) {

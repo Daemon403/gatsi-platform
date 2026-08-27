@@ -6,15 +6,19 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { CenterScreen } from '../screens/CenterScreen';
+import { BranchesScreen } from '../screens/BranchesScreen';
 import { CreateOrderScreen } from '../screens/CreateOrderScreen';
 import { HomeScreen } from '../screens/HomeScreen';
 import { LoginScreen } from '../screens/LoginScreen';
 import { MoreScreen } from '../screens/MoreScreen';
+import { NotificationsScreen } from '../screens/NotificationsScreen';
 import { OrderDetailScreen } from '../screens/OrderDetailScreen';
 import { OrdersScreen } from '../screens/OrdersScreen';
 import { PickupRequestScreen } from '../screens/PickupRequestScreen';
 import { ReceiptScreen } from '../screens/ReceiptScreen';
+import { ServicesManagementScreen } from '../screens/ServicesManagementScreen';
 import { StockScreen } from '../screens/StockScreen';
+import { TeamScreen } from '../screens/TeamScreen';
 import { useAppStore } from '../store/AppStore';
 import { colors } from '../theme';
 import type { RootStackParamList, TabParamList } from './types';
@@ -56,6 +60,7 @@ export function AppNavigation() {
   const { state, hydrated } = useAppStore();
   if (!hydrated) return <View style={styles.loading}><View style={styles.loadingMark}><Text style={styles.loadingLetter}>G</Text></View><ActivityIndicator color={colors.primary} style={{ marginTop: 18 }} /></View>;
   if (!state.activeUserId) return <LoginScreen />;
+  const role = getActiveUser(state)!.role;
   return (
     <NavigationContainer theme={theme}>
       <Root.Navigator screenOptions={{ headerShown: false, animation: 'slide_from_right', contentStyle: { backgroundColor: colors.background } }}>
@@ -64,6 +69,10 @@ export function AppNavigation() {
         <Root.Screen name="CreateOrder" component={CreateOrderScreen} />
         <Root.Screen name="PickupRequest" component={PickupRequestScreen} />
         <Root.Screen name="Receipt" component={ReceiptScreen} />
+        <Root.Screen name="Notifications" component={NotificationsScreen} />
+        {role !== 'customer' ? <Root.Screen name="Team" component={TeamScreen} /> : null}
+        {role === 'admin' ? <Root.Screen name="Branches" component={BranchesScreen} /> : null}
+        {role === 'admin' ? <Root.Screen name="ServicesManagement" component={ServicesManagementScreen} /> : null}
       </Root.Navigator>
     </NavigationContainer>
   );

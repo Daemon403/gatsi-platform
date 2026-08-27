@@ -24,6 +24,8 @@ export type Branch = {
   active: boolean;
 };
 
+export type BranchUpdate = Pick<Branch, 'name' | 'shortName' | 'address' | 'phone' | 'managerId' | 'active'>;
+
 export type User = {
   id: string;
   role: Role;
@@ -70,6 +72,8 @@ export type Customer = {
   measurements?: CustomerMeasurements;
 };
 
+export type CustomerUpdate = Pick<Customer, 'name' | 'phone' | 'email' | 'address' | 'branchId' | 'loyaltyPoints' | 'measurements'>;
+
 export type Service = {
   id: string;
   name: string;
@@ -80,6 +84,8 @@ export type Service = {
   description: string;
   active: boolean;
 };
+
+export type ServiceUpdate = Pick<Service, 'name' | 'category' | 'unit' | 'price' | 'turnaroundHours' | 'description' | 'active'>;
 
 export type OrderItem = {
   id: string;
@@ -158,6 +164,21 @@ export type Activity = {
   at: string;
 };
 
+export type AppNotification = {
+  id: string;
+  title: string;
+  message: string;
+  kind: Activity['kind'];
+  at: string;
+  branchId?: string;
+  orderId?: string;
+  pickupRequestId?: string;
+  customerId?: string;
+  actorUserId?: string;
+  recipientUserIds: string[];
+  readByUserIds: string[];
+};
+
 export type AppState = {
   version: number;
   activeUserId: string | null;
@@ -171,6 +192,7 @@ export type AppState = {
   pickupRequests: PickupRequest[];
   inventory: InventoryItem[];
   activities: Activity[];
+  notifications: AppNotification[];
 };
 
 export type AppAction =
@@ -186,8 +208,12 @@ export type AppAction =
   | { type: 'ADJUST_INVENTORY'; itemId: string; delta: number; userId: string }
   | { type: 'CLOCK_TOGGLE'; userId: string }
   | { type: 'CREATE_CUSTOMER'; customer: Customer; user: User }
+  | { type: 'UPDATE_BRANCH'; branchId: string; updates: BranchUpdate }
+  | { type: 'UPDATE_SERVICE'; serviceId: string; updates: ServiceUpdate }
+  | { type: 'UPDATE_CUSTOMER'; customerId: string; updates: CustomerUpdate }
   | { type: 'CREATE_STAFF'; user: User }
   | { type: 'ARCHIVE_STAFF'; userId: string }
   | { type: 'RESTORE_STAFF'; userId: string; branchIds?: string[]; password?: string }
   | { type: 'UPDATE_STAFF_BRANCHES'; userId: string; branchIds: string[] }
+  | { type: 'MARK_ALL_NOTIFICATIONS_READ' }
   | { type: 'RESET_DEMO' };

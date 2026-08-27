@@ -23,9 +23,11 @@ export function OrderDetailScreen() {
   if (!order) return <Screen><AppHeader title="Order not found" back /></Screen>;
   const customer = state.customers.find((item) => item.id === order.customerId);
   const branch = state.branches.find((item) => item.id === order.branchId);
+  const assignedStaff = state.users.find((item) => item.id === order.assignedStaffId && item.role === 'staff');
   const paid = orderPaid(state, order.id);
   const balance = orderBalance(state, order);
   const upcoming = nextStatus(order.status);
+  const canAdvanceWorkflow = user.role === 'admin' || (user.role === 'staff' && order.assignedStaffId === user.id);
 
   const recordPayment = () => {
     const amount = Number(paymentAmount);
@@ -45,6 +47,11 @@ export function OrderDetailScreen() {
           <View><Text style={styles.summaryLabel}>Branch</Text><Text style={styles.summaryValue}>{branch?.shortName}</Text></View>
           <View><Text style={styles.summaryLabel}>Intake</Text><Text style={styles.summaryValue}>{order.intakeMethod.replaceAll('_', ' ')}</Text></View>
         </View>
+        {user.role === 'admin' ? <View style={styles.assignment}>
+          <View style={[styles.assignmentAvatar, { backgroundColor: assignedStaff?.avatarColor ?? colors.muted }]}><Feather name={assignedStaff ? 'user' : 'user-x'} size={17} color="#fff" /></View>
+          <View style={{ flex: 1 }}><Text style={styles.summaryLabel}>Assigned team member</Text><Text style={styles.assignmentName}>{assignedStaff?.name ?? 'Unassigned'}</Text></View>
+          {assignedStaff ? <Feather name="check-circle" size={18} color={colors.primary} /> : <Feather name="alert-circle" size={18} color={colors.red} />}
+        </View> : null}
         {order.priority === 'urgent' ? <View style={styles.urgent}><Feather name="alert-circle" size={15} color={colors.red} /><Text style={styles.urgentText}>Urgent priority order</Text></View> : null}
       </Card>
 
@@ -64,9 +71,13 @@ export function OrderDetailScreen() {
         </View>
       </Card>
 
-      {user.role !== 'customer' && upcoming ? <>
+      {canAdvanceWorkflow && upcoming ? <>
         <SectionTitle title="Processing action" />
         <Card style={styles.actionCard}><View style={styles.actionIcon}><Feather name="fast-forward" size={22} color={colors.primary} /></View><View style={{ flex: 1 }}><Text style={styles.actionTitle}>Move to {statusLabels[upcoming]}</Text><Text style={styles.actionBody}>Adds a timestamped update visible to the customer.</Text></View><TouchableOpacity onPress={() => dispatch({ type: 'UPDATE_ORDER_STATUS', orderId: order.id, status: upcoming, userId: user.id })} style={styles.actionButton}><Feather name="arrow-right" size={20} color="#fff" /></TouchableOpacity></Card>
+      </> : null}
+      {user.role === 'staff' && !canAdvanceWorkflow && upcoming ? <>
+        <SectionTitle title="Processing action" />
+        <Card style={styles.assignmentNotice}><View style={styles.assignmentNoticeIcon}><Feather name="lock" size={20} color={colors.muted} /></View><View style={{ flex: 1 }}><Text style={styles.assignmentNoticeTitle}>Assigned to another team member</Text><Text style={styles.assignmentNoticeBody}>{assignedStaff ? `${assignedStaff.name} is responsible for advancing this order.` : 'An administrator must assign this order before its workflow can be advanced.'}</Text></View></Card>
       </> : null}
 
       <SectionTitle title="Care journey" />
@@ -96,10 +107,12 @@ export function OrderDetailScreen() {
 const styles = StyleSheet.create({
   summary: { padding: 18 }, summaryTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }, number: { color: colors.ink, fontSize: 21, fontWeight: '900' }, customer: { color: colors.primary, marginTop: 5, fontWeight: '700' },
   summaryGrid: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 20, paddingTop: 16, borderTopWidth: 1, borderTopColor: colors.border }, summaryLabel: { color: colors.subtle, fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.5 }, summaryValue: { color: colors.ink, fontSize: 12, fontWeight: '700', marginTop: 4, textTransform: 'capitalize' },
+  assignment: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: colors.border }, assignmentAvatar: { width: 36, height: 36, borderRadius: 11, alignItems: 'center', justifyContent: 'center' }, assignmentName: { color: colors.ink, fontSize: 12, fontWeight: '800', marginTop: 3 },
   urgent: { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: colors.redSoft, borderRadius: radius.sm, padding: 10, marginTop: 16 }, urgentText: { color: colors.red, fontSize: 12, fontWeight: '800' },
   itemsCard: { paddingHorizontal: 16 }, item: { flexDirection: 'row', alignItems: 'center', paddingVertical: 15, gap: 11 }, itemBorder: { borderTopWidth: 1, borderTopColor: colors.border }, itemIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center' }, itemTitle: { color: colors.ink, fontWeight: '800', fontSize: 13 }, itemMeta: { color: colors.muted, fontSize: 11, marginTop: 4 }, itemPrice: { color: colors.ink, fontWeight: '800', fontSize: 13 },
   totals: { borderTopWidth: 1, borderTopColor: colors.border, paddingVertical: 14, gap: 9 }, totalRow: { flexDirection: 'row', justifyContent: 'space-between' }, totalLabel: { color: colors.muted, fontSize: 12 }, totalValue: { color: colors.ink, fontSize: 12, fontWeight: '700' }, grandTotal: { paddingTop: 9, borderTopWidth: 1, borderTopColor: colors.border }, grandLabel: { color: colors.ink, fontWeight: '900' }, grandValue: { color: colors.ink, fontSize: 17, fontWeight: '900' }, balanceLabel: { color: colors.ink, fontWeight: '900' }, balanceValue: { color: colors.red, fontWeight: '900' },
   actionCard: { padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }, actionIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center' }, actionTitle: { color: colors.ink, fontSize: 14, fontWeight: '800' }, actionBody: { color: colors.muted, fontSize: 11, marginTop: 4 }, actionButton: { width: 42, height: 42, borderRadius: 13, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
+  assignmentNotice: { padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.background }, assignmentNoticeIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: colors.border, alignItems: 'center', justifyContent: 'center' }, assignmentNoticeTitle: { color: colors.ink, fontSize: 13, fontWeight: '800' }, assignmentNoticeBody: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 4 },
   timelineCard: { paddingHorizontal: 16, paddingTop: 16 }, timelineItem: { flexDirection: 'row', minHeight: 64 }, timelineAxis: { width: 28, alignItems: 'center' }, timelineDot: { width: 22, height: 22, borderRadius: 11, backgroundColor: colors.border, alignItems: 'center', justifyContent: 'center' }, timelineDotReached: { backgroundColor: colors.primary }, timelineLine: { width: 2, flex: 1, backgroundColor: colors.border }, timelineLineReached: { backgroundColor: colors.primaryLight }, timelineCopy: { flex: 1, paddingLeft: 8, paddingBottom: 15 }, timelineTitle: { color: colors.subtle, fontSize: 13, fontWeight: '700' }, timelineTitleReached: { color: colors.ink }, timelineMeta: { color: colors.subtle, fontSize: 10, marginTop: 3 }, timelineNote: { color: colors.muted, fontSize: 11, fontStyle: 'italic', marginTop: 4 },
   paymentCard: { padding: 16, gap: 14 }, methodLabel: { color: colors.ink, fontWeight: '700', fontSize: 13 }, methods: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, method: { paddingHorizontal: 11, paddingVertical: 8, borderRadius: 999, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border }, methodActive: { backgroundColor: colors.primaryLight, borderColor: colors.primary }, methodText: { color: colors.muted, fontSize: 11, textTransform: 'capitalize', fontWeight: '700' }, methodTextActive: { color: colors.primary }, receiptButton: { marginTop: 18 },
 });

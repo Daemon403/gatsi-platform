@@ -1,16 +1,17 @@
 import { Feather } from '@expo/vector-icons';
-import { getActiveBranch, getActiveUser } from '@gatsi/domain';
+import { getActiveBranch, getActiveUser, unreadNotifications } from '@gatsi/domain';
 import { useNavigation } from '@react-navigation/native';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useAppStore } from '../store/AppStore';
 import { colors, radius, shadow } from '../theme';
 
-export function AppHeader({ title, subtitle, back = false }: { title?: string; subtitle?: string; back?: boolean }) {
+export function AppHeader({ title, subtitle, back = false, showNotifications = true }: { title?: string; subtitle?: string; back?: boolean; showNotifications?: boolean }) {
   const { state, dispatch } = useAppStore();
   const user = getActiveUser(state);
   const branch = getActiveBranch(state);
-  const navigation = useNavigation();
+  const navigation = useNavigation<any>();
+  const unread = unreadNotifications(state);
 
   const cycleBranch = () => {
     if (user?.role !== 'admin') return;
@@ -36,7 +37,10 @@ export function AppHeader({ title, subtitle, back = false }: { title?: string; s
           </TouchableOpacity>
         )}
       </View>
-      <TouchableOpacity style={styles.squareButton}><Feather name="bell" size={21} color={colors.ink} /><View style={styles.notificationDot} /></TouchableOpacity>
+      {showNotifications ? <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Notifications, ${unread.length} unread`} onPress={() => navigation.navigate('Notifications')} style={styles.squareButton}>
+        <Feather name="bell" size={21} color={colors.ink} />
+        {unread.length ? <View style={styles.notificationBadge}><Text style={styles.notificationCount}>{unread.length > 9 ? '9+' : unread.length}</Text></View> : null}
+      </TouchableOpacity> : <View style={styles.squarePlaceholder} />}
     </View>
   );
 }
@@ -52,5 +56,7 @@ const styles = StyleSheet.create({
   subtitle: { color: colors.muted, fontSize: 13, marginTop: 4 },
   branchRow: { flexDirection: 'row', gap: 5, alignItems: 'center', marginTop: 5 },
   branchText: { color: colors.primary, fontSize: 13, fontWeight: '700' },
-  notificationDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.primary, borderWidth: 2, borderColor: '#fff', position: 'absolute', top: 10, right: 10 },
+  squarePlaceholder: { width: 48, height: 48 },
+  notificationBadge: { minWidth: 18, height: 18, paddingHorizontal: 4, borderRadius: 9, backgroundColor: colors.red, borderWidth: 2, borderColor: '#fff', position: 'absolute', top: 5, right: 5, alignItems: 'center', justifyContent: 'center' },
+  notificationCount: { color: '#fff', fontSize: 8, fontWeight: '900' },
 });

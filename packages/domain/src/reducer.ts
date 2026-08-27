@@ -1,6 +1,6 @@
 import { createDemoState } from './data';
-import { makeId } from './helpers';
-import type { Activity, AppAction, AppState } from './types';
+import { makeId, normalizeNotifications, notificationRelatesToUser } from './helpers';
+import type { Activity, AppAction, AppNotification, AppState, Order } from './types';
 
 const activity = (state: AppState, values: Omit<Activity, 'id' | 'at'>): Activity => ({
   id: makeId('activity'),
@@ -8,10 +8,36 @@ const activity = (state: AppState, values: Omit<Activity, 'id' | 'at'>): Activit
   ...values,
 });
 
+const orderRecipientUserIds = (state: AppState, order: Order, actorUserId: string) => [...new Set([
+  actorUserId,
+  order.assignedStaffId,
+  ...state.users.filter((user) => user.role === 'customer' && user.active !== false && user.customerId === order.customerId).map((user) => user.id),
+].filter((value): value is string => Boolean(value)))];
+
+const orderNotification = (
+  state: AppState,
+  order: Order,
+  actorUserId: string,
+  values: Pick<AppNotification, 'title' | 'message'>,
+): AppNotification => ({
+  id: makeId('notification'),
+  kind: 'order',
+  at: new Date().toISOString(),
+  branchId: order.branchId,
+  orderId: order.id,
+  customerId: order.customerId,
+  actorUserId,
+  recipientUserIds: orderRecipientUserIds(state, order, actorUserId),
+  readByUserIds: [],
+  ...values,
+});
+
 export const appReducer = (state: AppState, action: AppAction): AppState => {
   switch (action.type) {
     case 'HYDRATE':
-      return action.state.version === state.version ? action.state : state;
+      return action.state.version === state.version
+        ? { ...action.state, notifications: normalizeNotifications(action.state.notifications) }
+        : state;
     case 'LOGIN': {
       const user = state.users.find((item) => item.id === action.userId);
       if (!user) return state;
@@ -21,12 +47,24 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
       return { ...state, activeUserId: null };
     case 'SET_BRANCH':
       return { ...state, activeBranchId: action.branchId };
-    case 'CREATE_ORDER':
+    case 'CREATE_ORDER': {
+      const creator = state.users.find((user) => user.id === state.activeUserId);
+      const incomingOrder = creator?.role === 'staff' ? { ...action.order, assignedStaffId: creator.id } : action.order;
+      const actorUserId = creator?.id ?? incomingOrder.events[0]?.byUserId ?? 'user-admin';
+      const order = creator && incomingOrder.events.length
+        ? { ...incomingOrder, events: incomingOrder.events.map((event, index) => index === 0 ? { ...event, byUserId: creator.id } : event) }
+        : incomingOrder;
+      const assignee = state.users.find((user) => user.id === order.assignedStaffId);
       return {
         ...state,
-        orders: [action.order, ...state.orders],
-        activities: [activity(state, { branchId: action.order.branchId, userId: action.order.events[0]?.byUserId ?? 'user-admin', message: `created ${action.order.number}`, kind: 'order' }), ...state.activities],
+        orders: [order, ...state.orders],
+        activities: [activity(state, { branchId: order.branchId, userId: actorUserId, message: `created ${order.number}`, kind: 'order' }), ...state.activities],
+        notifications: [orderNotification(state, order, actorUserId, {
+          title: order.assignedStaffId ? 'New assigned job' : 'New job intake',
+          message: assignee ? `${order.number} was assigned to ${assignee.name}.` : `${order.number} was received and is awaiting assignment.`,
+        }), ...(state.notifications ?? [])].slice(0, 500),
       };
+    }
     case 'UPDATE_ORDER_STATUS': {
       const target = state.orders.find((order) => order.id === action.orderId);
       if (!target) return state;
@@ -39,6 +77,10 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
           events: [...order.events, { id: makeId('event'), status: action.status, at: new Date().toISOString(), byUserId: action.userId, note: action.note }],
         } : order),
         activities: [activity(state, { branchId: target.branchId, userId: action.userId, message: `moved ${target.number} to ${action.status.replaceAll('_', ' ')}`, kind: 'order' }), ...state.activities],
+        notifications: [orderNotification(state, target, action.userId, {
+          title: `${target.number} updated`,
+          message: `Order moved to ${action.status.replaceAll('_', ' ')}.`,
+        }), ...(state.notifications ?? [])].slice(0, 500),
       };
     }
     case 'ADD_PAYMENT': {
@@ -86,6 +128,37 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
     }
     case 'CREATE_CUSTOMER':
       return { ...state, customers: [action.customer, ...state.customers], users: [{ ...action.user, verified: true, active: true }, ...state.users] };
+    case 'UPDATE_BRANCH': {
+      const target = state.branches.find((branch) => branch.id === action.branchId);
+      if (!target) return state;
+      const nextBranches = state.branches.map((branch) => branch.id === action.branchId ? { ...branch, ...action.updates } : branch);
+      const activeUser = state.users.find((user) => user.id === state.activeUserId);
+      const activeBranchId = state.activeBranchId === action.branchId && !action.updates.active
+        ? (activeUser?.role === 'admin' ? 'all' : nextBranches.find((branch) => branch.active && activeUser?.branchIds.includes(branch.id))?.id ?? state.activeBranchId)
+        : state.activeBranchId;
+      return { ...state, branches: nextBranches, activeBranchId };
+    }
+    case 'UPDATE_SERVICE': {
+      if (!state.services.some((service) => service.id === action.serviceId)) return state;
+      return {
+        ...state,
+        services: state.services.map((service) => service.id === action.serviceId ? { ...service, ...action.updates } : service),
+      };
+    }
+    case 'UPDATE_CUSTOMER': {
+      if (!state.customers.some((customer) => customer.id === action.customerId)) return state;
+      return {
+        ...state,
+        customers: state.customers.map((customer) => customer.id === action.customerId ? { ...customer, ...action.updates } : customer),
+        users: state.users.map((user) => user.role === 'customer' && user.customerId === action.customerId ? {
+          ...user,
+          name: action.updates.name,
+          email: action.updates.email,
+          phone: action.updates.phone,
+          branchIds: [action.updates.branchId],
+        } : user),
+      };
+    }
     case 'CREATE_STAFF': {
       const { password: _password, ...incoming } = action.user;
       const user = { ...incoming, role: 'staff' as const, active: true, verified: true, clockedIn: false };
@@ -161,6 +234,16 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
           message: `updated ${target.name}'s branch assignment`,
           kind: 'staff',
         }), ...state.activities],
+      };
+    }
+    case 'MARK_ALL_NOTIFICATIONS_READ': {
+      const user = state.users.find((item) => item.id === state.activeUserId);
+      if (!user) return state;
+      return {
+        ...state,
+        notifications: normalizeNotifications(state.notifications).map((item) => notificationRelatesToUser(state, item, user) && !(item.readByUserIds ?? []).includes(user.id)
+          ? { ...item, readByUserIds: [...(item.readByUserIds ?? []), user.id] }
+          : item),
       };
     }
     case 'RESET_DEMO':

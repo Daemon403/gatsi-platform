@@ -4,6 +4,10 @@ export type RootStackParamList = {
   CreateOrder: undefined;
   PickupRequest: undefined;
   Receipt: { orderId: string };
+  Team: undefined;
+  Branches: undefined;
+  ServicesManagement: undefined;
+  Notifications: undefined;
 };
 
 export type TabParamList = {

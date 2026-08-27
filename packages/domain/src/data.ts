@@ -117,4 +117,10 @@ export const createDemoState = (): AppState => ({
     { id: 'activity-3', branchId: 'branch-murewa', userId: 'user-tinashe', message: 'received the Mhofu Lodge pickup', kind: 'pickup', at: '2026-08-21T08:10:00.000Z' },
     { id: 'activity-4', branchId: 'branch-cbd', userId: 'user-rudo-staff', message: 'clocked in at the front desk', kind: 'staff', at: '2026-08-21T07:16:00.000Z' },
   ],
+  notifications: [
+    { id: 'notification-1', title: 'Order ready for collection', message: 'GAT-2608-1049 is ready for collection.', kind: 'order', at: '2026-08-21T09:15:00.000Z', branchId: 'branch-cbd', orderId: 'order-1049', customerId: 'customer-tariro', actorUserId: 'user-rudo-staff', recipientUserIds: ['user-rudo-staff'], readByUserIds: [] },
+    { id: 'notification-2', title: 'Order moved to washing', message: 'GAT-2608-1042 moved to washing.', kind: 'order', at: '2026-08-21T07:30:00.000Z', branchId: 'branch-cbd', orderId: 'order-1042', customerId: 'customer-rudo', actorUserId: 'user-rudo-staff', recipientUserIds: ['user-rudo-staff', 'user-customer'], readByUserIds: [] },
+    { id: 'notification-3', title: 'Order moved to ironing', message: 'GAT-2608-1052 moved to ironing.', kind: 'order', at: '2026-08-21T08:55:00.000Z', branchId: 'branch-avondale', orderId: 'order-1052', customerId: 'customer-nyasha', actorUserId: 'user-mary', recipientUserIds: ['user-mary'], readByUserIds: [] },
+    { id: 'notification-4', title: 'New assigned job', message: 'GAT-2608-1057 was assigned to Tinashe Moyo.', kind: 'order', at: '2026-08-21T06:40:00.000Z', branchId: 'branch-murewa', orderId: 'order-1057', customerId: 'customer-mhofu', actorUserId: 'user-tinashe', recipientUserIds: ['user-tinashe'], readByUserIds: ['user-tinashe'] },
+  ],
 });

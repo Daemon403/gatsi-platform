@@ -9,7 +9,7 @@ const accessMinutes = Number(process.env.ACCESS_TOKEN_MINUTES || 15); const refr
 const developmentCredentials = [['user-admin','admin','Promise Gatsi','Promise','GATSI',['branch-cbd'],null],['user-mary','staff','Mary Dube','Mary','DUBE',['branch-avondale'],null],['user-tinashe','staff','Tinashe Moyo','Tinashe','MOYO',['branch-murewa'],null],['user-rudo-staff','staff','Rudo Nyathi','RudoStaff','NYATHI',['branch-cbd'],null],['user-customer','customer','Rudo Chikowore','Rudo','CHIKOWORE',['branch-cbd'],'customer-rudo']];
 if (production && (!process.env.INITIAL_ADMIN_USERNAME || !process.env.INITIAL_ADMIN_PASSWORD)) throw new Error('INITIAL_ADMIN_USERNAME and INITIAL_ADMIN_PASSWORD are required in production.');
 const credentials = production ? [['user-admin','admin','Promise Gatsi',process.env.INITIAL_ADMIN_USERNAME,process.env.INITIAL_ADMIN_PASSWORD,['branch-cbd'],null]] : developmentCredentials;
-const emptyState = { version: 1, activeUserId: null, activeBranchId: 'branch-cbd', branches: [{ id:'branch-cbd',name:'Harare CBD Branch',shortName:'Harare CBD',address:'12 Jason Moyo Avenue, Harare',phone:'+263 77 410 2201',managerId:'user-admin',active:true },{ id:'branch-avondale',name:'Avondale Branch',shortName:'Avondale',address:'8 King George Road, Avondale',phone:'+263 77 410 2202',managerId:'user-mary',active:true },{ id:'branch-murewa',name:'Murewa Branch',shortName:'Murewa',address:'Stand 41, Murewa Centre',phone:'+263 77 410 2203',managerId:'user-tinashe',active:true }], users: [], customers: [{ id:'customer-rudo',name:'Rudo Chikowore',phone:'+263 77 555 0199',email:'rudo@example.com',address:'32 Fife Avenue, Harare',joinedAt:new Date().toISOString(),branchId:'branch-cbd',loyaltyPoints:185 }], services: [], orders: [], payments: [], pickupRequests: [], inventory: [], activities: [] };
+const emptyState = { version: 1, activeUserId: null, activeBranchId: 'branch-cbd', branches: [{ id:'branch-cbd',name:'Harare CBD Branch',shortName:'Harare CBD',address:'12 Jason Moyo Avenue, Harare',phone:'+263 77 410 2201',managerId:'user-admin',active:true },{ id:'branch-avondale',name:'Avondale Branch',shortName:'Avondale',address:'8 King George Road, Avondale',phone:'+263 77 410 2202',managerId:'user-mary',active:true },{ id:'branch-murewa',name:'Murewa Branch',shortName:'Murewa',address:'Stand 41, Murewa Centre',phone:'+263 77 410 2203',managerId:'user-tinashe',active:true }], users: [], customers: [{ id:'customer-rudo',name:'Rudo Chikowore',phone:'+263 77 555 0199',email:'rudo@example.com',address:'32 Fife Avenue, Harare',joinedAt:new Date().toISOString(),branchId:'branch-cbd',loyaltyPoints:185 }], services: [], orders: [], payments: [], pickupRequests: [], inventory: [], activities: [], notifications: [] };
 
 const nowPlus = (amount, unit) => new Date(Date.now() + amount * unit); const ipOf = (req) => String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
 const response = (res,status,body,origin) => { res.writeHead(status,{ 'content-type':'application/json; charset=utf-8','access-control-allow-origin':origin || '','access-control-allow-headers':'authorization,content-type','access-control-allow-methods':'GET,POST,OPTIONS',vary:'Origin','x-content-type-options':'nosniff','referrer-policy':'no-referrer','cache-control':'no-store' }); res.end(JSON.stringify(body)); };
@@ -19,9 +19,12 @@ const reportError = async (error, req) => { console.error(JSON.stringify({ level
 
 async function migrate() { await query('CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())'); const { readdir, readFile } = await import('node:fs/promises'); const { dirname, resolve } = await import('node:path'); const { fileURLToPath } = await import('node:url'); const dir=resolve(dirname(fileURLToPath(import.meta.url)),'../migrations'); const applied=new Set((await query('SELECT version FROM schema_migrations')).rows.map(r=>r.version)); for(const file of (await readdir(dir)).filter(f=>f.endsWith('.sql')).sort()){if(applied.has(file))continue;const sql=await readFile(resolve(dir,file),'utf8');await transaction(async c=>{await c.query(sql);await c.query('INSERT INTO schema_migrations(version) VALUES($1)',[file]);});} }
 async function seed() { await transaction(async c => { await c.query("INSERT INTO app_state(singleton,payload) VALUES(true,$1) ON CONFLICT(singleton) DO NOTHING",[JSON.stringify(emptyState)]); for(const [id,role,name,username,password,branchIds,customerId] of credentials){const profile={id,role,name,username,branchIds,customerId,email:'',phone:'',avatarColor:'#008D4C',verified:true,active:true};await c.query('INSERT INTO users(id,username,username_normalized,password_hash,role,verified_at,active,profile) VALUES($1,$2,$3,$4,$5,now(),true,$6) ON CONFLICT(id) DO NOTHING',[id,username,username.toLowerCase(),passwordHash(password),role,JSON.stringify(profile)]);} const state=(await c.query('SELECT payload FROM app_state WHERE singleton=true')).rows[0].payload;if(!state.users?.length){state.users=credentials.map(([id,role,name,username,,branchIds,customerId])=>({id,role,name,username,branchIds,customerId,email:'',phone:'',avatarColor:'#008D4C',verified:true,active:true}));await c.query('UPDATE app_state SET payload=$1,updated_at=now() WHERE singleton=true',[JSON.stringify(state)]);} }); }
-const loadState = async (client=pool) => (await client.query('SELECT payload FROM app_state WHERE singleton=true')).rows[0].payload;
+const normalizeNotifications = (value) => Array.isArray(value)?value.filter(item=>item&&typeof item==='object'&&typeof item.id==='string'&&typeof item.title==='string'&&typeof item.message==='string'&&typeof item.at==='string').map(item=>({...item,recipientUserIds:Array.isArray(item.recipientUserIds)?item.recipientUserIds.filter(id=>typeof id==='string'):[],readByUserIds:Array.isArray(item.readByUserIds)?item.readByUserIds.filter(id=>typeof id==='string'):[]})).slice(0,500):[];
+const normalizeState = (state) => ({...state,notifications:normalizeNotifications(state?.notifications)});
+const loadState = async (client=pool) => normalizeState((await client.query('SELECT payload FROM app_state WHERE singleton=true')).rows[0].payload);
 const publicUsers = (state) => ({...state,users:state.users.map(({password,passwordHash,...u})=>u)});
 const scoped = (state,user) => {
+  state=normalizeState(state);
   const branchIds=user.role==='admin'?state.branches.map(b=>b.id):user.profile.branchIds||[];
   const orders=user.role==='customer'?state.orders.filter(o=>o.customerId===user.profile.customerId):state.orders.filter(o=>branchIds.includes(o.branchId));
   const ids=new Set(orders.map(o=>o.id));
@@ -30,10 +33,16 @@ const scoped = (state,user) => {
     if(candidate.role==='staff'&&candidate.active===false)return false;
     return (candidate.branchIds||[]).some(id=>branchIds.includes(id));
   });
-  return publicUsers({...state,activeUserId:user.id,activeBranchId:user.role==='admin'?'all':branchIds[0],branches:state.branches.filter(b=>branchIds.includes(b.id)),users,customers:user.role==='customer'?state.customers.filter(c=>c.id===user.profile.customerId):state.customers.filter(c=>branchIds.includes(c.branchId)),orders,payments:state.payments.filter(p=>ids.has(p.orderId)),pickupRequests:user.role==='customer'?state.pickupRequests.filter(p=>p.customerId===user.profile.customerId):state.pickupRequests.filter(p=>branchIds.includes(p.branchId)),inventory:user.role==='customer'?[]:state.inventory.filter(i=>branchIds.includes(i.branchId)),activities:user.role==='customer'?[]:state.activities.filter(a=>branchIds.includes(a.branchId))});
+  const notifications=user.role==='admin'?state.notifications:state.notifications.filter(item=>notificationRelatesToUser(state,item,user)).map(item=>({...item,recipientUserIds:(item.recipientUserIds||[]).includes(user.id)?[user.id]:[],readByUserIds:(item.readByUserIds||[]).includes(user.id)?[user.id]:[]}));
+  const visibleBranchIds=user.role==='customer'?new Set([...branchIds,...orders.map(order=>order.branchId),...state.pickupRequests.filter(item=>item.customerId===user.profile.customerId).map(item=>item.branchId)]):new Set(branchIds);
+  return publicUsers({...state,activeUserId:user.id,activeBranchId:user.role==='admin'?'all':branchIds[0],branches:state.branches.filter(b=>visibleBranchIds.has(b.id)),users,customers:user.role==='customer'?state.customers.filter(c=>c.id===user.profile.customerId):state.customers.filter(c=>branchIds.includes(c.branchId)),orders,payments:state.payments.filter(p=>ids.has(p.orderId)),pickupRequests:user.role==='customer'?state.pickupRequests.filter(p=>p.customerId===user.profile.customerId):state.pickupRequests.filter(p=>branchIds.includes(p.branchId)),inventory:user.role==='customer'?[]:state.inventory.filter(i=>branchIds.includes(i.branchId)),activities:user.role==='customer'?[]:state.activities.filter(a=>branchIds.includes(a.branchId)),notifications});
 };
 const canBranch=(user,id)=>user.role==='admin'||(user.profile.branchIds||[]).includes(id);
 const activity=(branchId,userId,message,kind)=>({id:`activity-${randomUUID()}`,branchId,userId,message,kind,at:new Date().toISOString()});
+const notificationRelatesToUser=(state,item,user)=>user.role==='admin'||(item.recipientUserIds||[]).includes(user.id)||item.actorUserId===user.id||(user.role==='customer'&&user.profile.customerId&&item.customerId===user.profile.customerId)||(user.role==='staff'&&item.orderId&&state.orders.some(order=>order.id===item.orderId&&order.assignedStaffId===user.id));
+const orderRecipientUserIds=(state,order,actorUserId)=>[...new Set([actorUserId,order.assignedStaffId,...state.users.filter(candidate=>candidate.role==='customer'&&candidate.active!==false&&candidate.customerId===order.customerId).map(candidate=>candidate.id)].filter(Boolean))];
+const orderNotification=(state,order,actorUserId,title,message)=>({id:`notification-${randomUUID()}`,title,message,kind:'order',at:new Date().toISOString(),branchId:order.branchId,orderId:order.id,customerId:order.customerId,actorUserId,recipientUserIds:orderRecipientUserIds(state,order,actorUserId),readByUserIds:[]});
+const addNotification=(state,item)=>{state.notifications=[item,...state.notifications].slice(0,500);};
 const fail=(message,status=422)=>Object.assign(new Error(message),{status});
 const requireAdmin=(user)=>{if(user.role!=='admin')throw fail('Administrator access required.',403);};
 const textValue=(value,max=200)=>String(value??'').trim().slice(0,max);
@@ -49,16 +58,95 @@ const validStaffBranches=(state,value)=>{
 const setStateUser=(state,profile)=>{const index=state.users.findIndex(item=>item.id===profile.id);if(index===-1)state.users.unshift(profile);else state.users[index]=profile;};
 
 async function mutate(user,action,req){return transaction(async c=>{
-  const state=(await c.query('SELECT payload FROM app_state WHERE singleton=true FOR UPDATE')).rows[0].payload;
+  const state=normalizeState((await c.query('SELECT payload FROM app_state WHERE singleton=true FOR UPDATE')).rows[0].payload);
   let auditMetadata={};let auditEntityType='action';let auditEntityId=action.type;
   if(action.type==='CREATE_CUSTOMER'){
     if(user.role!=='admin'||!canBranch(user,action.customer?.branchId))throw fail('Not authorized.',403);
+    if(!state.branches.some(item=>item.id===action.customer?.branchId&&item.active))throw fail('Choose an open branch.');
     if(!action.user?.username||!action.user?.password)throw fail('Login details are required.');
     const normalized=action.user.username.toLowerCase();
     if((await c.query('SELECT 1 FROM users WHERE username_normalized=$1',[normalized])).rowCount)throw fail('Username already exists.',409);
     const profile={...action.user,password:undefined,verified:false,active:true};
     await c.query('INSERT INTO users(id,username,username_normalized,password_hash,role,email,phone,active,profile) VALUES($1,$2,$3,$4,$5,$6,$7,true,$8)',[profile.id,profile.username,normalized,passwordHash(action.user.password),profile.role,profile.email,profile.phone,JSON.stringify(profile)]);
     state.customers.unshift(action.customer);state.users.unshift(profile);await issueOneTime(c,profile.id,'account_verification',profile.email,profile.phone,req);
+  }
+  else if(action.type==='UPDATE_BRANCH'){
+    requireAdmin(user);
+    const branchId=textValue(action.branchId,128),incoming=action.updates||{};
+    const target=state.branches.find(item=>item.id===branchId);
+    if(!target)throw fail('Branch was not found.',404);
+    const name=textValue(incoming.name,160),shortName=textValue(incoming.shortName,80),address=textValue(incoming.address,300),phone=textValue(incoming.phone,64),managerId=textValue(incoming.managerId,128);
+    if(!name||!shortName||!address||!phone||!managerId||typeof incoming.active!=='boolean')throw fail('Complete every branch field.');
+    if(state.branches.some(item=>item.id!==branchId&&(item.name.toLowerCase()===name.toLowerCase()||item.shortName.toLowerCase()===shortName.toLowerCase())))throw fail('Branch name and short name must be unique.',409);
+    const stateManager=state.users.find(item=>item.id===managerId&&item.active!==false&&(item.role==='admin'||(item.role==='staff'&&item.verified===true&&(item.branchIds||[]).includes(branchId))));
+    const manager=(await c.query('SELECT id,role,active,verified_at,profile FROM users WHERE id=$1 FOR UPDATE',[managerId])).rows[0];
+    const managerCanLead=manager&&manager.active&&manager.verified_at&&(manager.role==='admin'||(manager.role==='staff'&&(manager.profile?.branchIds||[]).includes(branchId)));
+    if(!stateManager||!managerCanLead)throw fail('Choose an active verified administrator or branch staff member as manager.');
+    if(target.active&&!incoming.active){
+      if(state.branches.filter(item=>item.active).length<=1)throw fail('At least one branch must remain open.');
+      if(state.orders.some(item=>item.branchId===branchId&&!['collected','cancelled'].includes(item.status)))throw fail('Complete or cancel this branch\'s active orders before closing it.',409);
+      if(state.pickupRequests.some(item=>item.branchId===branchId&&['requested','scheduled'].includes(item.status)))throw fail('Complete or cancel this branch\'s pending pickups before closing it.',409);
+      const assignedStaff=state.users.find(item=>item.role==='staff'&&item.active!==false&&(item.branchIds||[]).includes(branchId));
+      if(assignedStaff)throw fail(`Remove ${assignedStaff.name}'s assignment to this branch before closing it.`,409);
+      const assignedCustomer=state.customers.find(item=>item.branchId===branchId);
+      if(assignedCustomer)throw fail(`Move ${assignedCustomer.name} to another open branch before closing this branch.`,409);
+    }
+    const before={name:target.name,shortName:target.shortName,address:target.address,phone:target.phone,managerId:target.managerId,active:target.active};
+    const updates={name,shortName,address,phone,managerId,active:incoming.active};
+    Object.assign(target,updates);
+    auditMetadata={before,after:updates};auditEntityType='branch';auditEntityId=branchId;
+  }
+  else if(action.type==='UPDATE_SERVICE'){
+    requireAdmin(user);
+    const serviceId=textValue(action.serviceId,128),incoming=action.updates||{};
+    const target=state.services.find(item=>item.id===serviceId);
+    if(!target)throw fail('Service was not found.',404);
+    const name=textValue(incoming.name,160),description=textValue(incoming.description,1000),price=incoming.price,turnaroundHours=incoming.turnaroundHours;
+    const categories=new Set(['laundry','dry_cleaning','textile','speciality']),units=new Set(['item','kg','pair','set','metre']);
+    if(!name||!description||!categories.has(incoming.category)||!units.has(incoming.unit)||typeof incoming.active!=='boolean')throw fail('Complete every service field.');
+    if(typeof price!=='number'||!Number.isFinite(price)||price<0||price>1000000)throw fail('Service price is invalid.');
+    if(typeof turnaroundHours!=='number'||!Number.isInteger(turnaroundHours)||turnaroundHours<1||turnaroundHours>8760)throw fail('Turnaround must be between 1 and 8,760 hours.');
+    if(state.services.some(item=>item.id!==serviceId&&item.name.toLowerCase()===name.toLowerCase()))throw fail('Service name already exists.',409);
+    const before={name:target.name,price:target.price,turnaroundHours:target.turnaroundHours,active:target.active};
+    const updates={name,category:incoming.category,unit:incoming.unit,price,turnaroundHours,description,active:incoming.active};
+    Object.assign(target,updates);
+    auditMetadata={before,after:updates};auditEntityType='service';auditEntityId=serviceId;
+  }
+  else if(action.type==='UPDATE_CUSTOMER'){
+    requireAdmin(user);
+    const customerId=textValue(action.customerId,128),incoming=action.updates||{};
+    const target=state.customers.find(item=>item.id===customerId);
+    if(!target)throw fail('Customer was not found.',404);
+    const name=textValue(incoming.name,200),phone=textValue(incoming.phone,64),email=textValue(incoming.email,254),address=textValue(incoming.address,500),branchId=textValue(incoming.branchId,128),loyaltyPoints=incoming.loyaltyPoints;
+    if(!name||!phone||!address)throw fail('Customer name, phone and address are required.');
+    if(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw fail('Email address is invalid.');
+    if(!state.branches.some(item=>item.id===branchId&&item.active))throw fail('Choose an open branch.');
+    if(typeof loyaltyPoints!=='number'||!Number.isInteger(loyaltyPoints)||loyaltyPoints<0||loyaltyPoints>1000000000)throw fail('Loyalty points must be a non-negative whole number.');
+    let measurements;
+    if(incoming.measurements!==undefined){
+      if(!incoming.measurements||!['cm','in'].includes(incoming.measurements.unit))throw fail('Measurement unit must be centimetres or inches.');
+      measurements={unit:incoming.measurements.unit};
+      for(const key of ['height','neck','chest','waist','hips','shoulder','sleeve','inseam']){
+        const value=incoming.measurements[key];
+        if(value===undefined)continue;
+        if(typeof value!=='number'||!Number.isFinite(value)||value<=0||value>1000)throw fail(`${key} measurement is invalid.`);
+        measurements[key]=value;
+      }
+    }
+    const before={name:target.name,email:target.email,phone:target.phone,branchId:target.branchId,loyaltyPoints:target.loyaltyPoints};
+    const updates={name,phone,email,address,branchId,loyaltyPoints,...(measurements?{measurements}:{measurements:undefined})};
+    Object.assign(target,updates);
+    const stateAccounts=state.users.filter(item=>item.role==='customer'&&item.customerId===customerId);
+    const accounts=(await c.query("SELECT id,profile FROM users WHERE role='customer' AND profile->>'customerId'=$1 FOR UPDATE",[customerId])).rows;
+    if(stateAccounts.length>1||accounts.length>1)throw fail('Multiple login accounts are linked to this customer. Contact support.',409);
+    const stateAccount=stateAccounts[0],account=accounts[0];
+    if(stateAccount&&!account)throw fail('The linked customer login is inconsistent. Contact support.',409);
+    if(account){
+      const profile={...account.profile,...stateAccount,id:account.id,role:'customer',customerId,name,email,phone,branchIds:[branchId]};delete profile.password;
+      await c.query('UPDATE users SET email=$2,phone=$3,profile=$4,updated_at=now() WHERE id=$1',[account.id,email,phone,JSON.stringify(profile)]);
+      setStateUser(state,profile);
+    }
+    auditMetadata={before,after:{name,email,phone,branchId,loyaltyPoints,measurementsUpdated:incoming.measurements!==undefined}};auditEntityType='customer';auditEntityId=customerId;
   }
   else if(action.type==='CREATE_STAFF'){
     requireAdmin(user);
@@ -86,6 +174,8 @@ async function mutate(user,action,req){return transaction(async c=>{
     if(!account||account.role!=='staff')throw fail('Staff account was not found.',404);
     if(!account.active)throw fail('Staff account is already archived.',409);
     const stateAccount=state.users.find(item=>item.id===userId);
+    const managedBranch=state.branches.find(item=>item.active&&item.managerId===userId);
+    if(managedBranch)throw fail(`Assign a new manager to ${managedBranch.name} before archiving this account.`,409);
     const before={active:true,branchIds:stateAccount?.branchIds||account.profile.branchIds||[]};
     const archivedAt=new Date().toISOString();
     const profile={...account.profile,...stateAccount,id:userId,role:'staff',active:false,clockedIn:false,archivedAt,archivedByUserId:user.id};
@@ -124,19 +214,86 @@ async function mutate(user,action,req){return transaction(async c=>{
     if(!account||account.role!=='staff')throw fail('Staff account was not found.',404);
     if(!account.active)throw fail('Restore this staff account before changing its branch assignment.',409);
     const branchIds=validStaffBranches(state,action.branchIds),stateAccount=state.users.find(item=>item.id===userId);
+    const managedBranch=state.branches.find(item=>item.active&&item.managerId===userId&&!branchIds.includes(item.id));
+    if(managedBranch)throw fail(`Keep this staff member assigned to ${managedBranch.name}, or choose a new branch manager first.`,409);
     const profile={...account.profile,...stateAccount,id:userId,role:'staff',active:true,branchIds};delete profile.password;
     const previousBranchIds=account.profile.branchIds||stateAccount?.branchIds||[];
     await c.query('UPDATE users SET profile=$2,updated_at=now() WHERE id=$1',[userId,JSON.stringify(profile)]);
     setStateUser(state,profile);state.activities.unshift(activity(branchIds[0],user.id,`updated ${profile.name}'s branch assignment`,'staff'));
     auditMetadata={before:{branchIds:previousBranchIds},after:{branchIds}};auditEntityType='user';auditEntityId=userId;
   }
-  else if(action.type==='CREATE_ORDER'){if(user.role==='customer'||!canBranch(user,action.order?.branchId))throw fail('Not authorized.',403);state.orders.unshift(action.order);state.activities.unshift(activity(action.order.branchId,user.id,`created ${action.order.number}`,'order'));}
-  else if(action.type==='UPDATE_ORDER_STATUS'){const o=state.orders.find(x=>x.id===action.orderId);if(!o||user.role==='customer'||!canBranch(user,o.branchId))throw fail('Not authorized.',403);o.status=action.status;if(action.status==='collected')o.collectedAt=new Date().toISOString();o.events.push({id:`event-${randomUUID()}`,status:action.status,at:new Date().toISOString(),byUserId:user.id,note:action.note});}
+  else if(action.type==='CREATE_ORDER'){
+    if(user.role==='customer')throw fail('Not authorized.',403);
+    const incoming=action.order||{},id=textValue(incoming.id,128),number=textValue(incoming.number,64),branchId=textValue(incoming.branchId,128),customerId=textValue(incoming.customerId,128);
+    const branch=state.branches.find(item=>item.id===branchId&&item.active);
+    if(!branch||!canBranch(user,branchId))throw fail('Choose an active branch you can access.',403);
+    const customer=state.customers.find(item=>item.id===customerId&&item.branchId===branchId);
+    if(!customer)throw fail('Choose a customer belonging to the processing branch.');
+    if(!id||!number)throw fail('Order ID and number are required.');
+    if(state.orders.some(item=>item.id===id||item.number===number))throw fail('Order ID or number already exists.',409);
+    if(!Array.isArray(incoming.items)||!incoming.items.length)throw fail('Add at least one service item.');
+    if(incoming.items.length>100)throw fail('An order cannot contain more than 100 service items.');
+    const items=incoming.items.map((item,index)=>{
+      const service=state.services.find(entry=>entry.id===textValue(item?.serviceId,128)&&entry.active);
+      const quantity=item?.quantity,description=textValue(item?.description,500);
+      if(!service||!description||typeof quantity!=='number'||!Number.isFinite(quantity)||quantity<=0||quantity>10000)throw fail(`Order item ${index+1} is invalid.`);
+      const itemNotes=textValue(item?.notes,1000);
+      return {id:textValue(item?.id,128)||`item-${randomUUID()}`,serviceId:service.id,description,quantity,unitPrice:service.price,...(itemNotes?{notes:itemNotes}:{})};
+    });
+    const actor=state.users.find(item=>item.id===user.id&&item.active!==false);
+    if(!actor)throw fail('The signed-in account is inactive.',403);
+    let assignedStaffId,assigneeName;
+    if(user.role==='staff'){
+      if(actor.role!=='staff'||!user.verified_at||!(actor.branchIds||[]).includes(branchId))throw fail('Staff can only intake jobs for their assigned branch.',403);
+      assignedStaffId=user.id;
+      assigneeName=actor.name;
+    }else if(incoming.assignedStaffId){
+      const requestedId=textValue(incoming.assignedStaffId,128);
+      const stateAssignee=state.users.find(item=>item.id===requestedId&&item.role==='staff'&&item.active!==false&&item.verified===true&&(item.branchIds||[]).includes(branchId));
+      const account=(await c.query("SELECT id,role,active,verified_at,profile FROM users WHERE id=$1 FOR UPDATE",[requestedId])).rows[0];
+      const accountBranches=account?.profile?.branchIds||[];
+      if(!stateAssignee||!account||account.role!=='staff'||!account.active||!account.verified_at||!accountBranches.includes(branchId))throw fail('Choose an active staff member assigned to the processing branch.');
+      assignedStaffId=account.id;assigneeName=stateAssignee.name||account.profile.name;
+    }
+    const dueTime=Date.parse(String(incoming.dueAt||''));
+    if(!Number.isFinite(dueTime)||dueTime<Date.now())throw fail('A valid future due date is required.');
+    const subtotal=items.reduce((sum,item)=>sum+item.quantity*item.unitPrice,0);
+    const discount=incoming.discount??0,deliveryFee=incoming.deliveryFee??0;
+    if(typeof discount!=='number'||!Number.isFinite(discount)||discount<0||discount>subtotal)throw fail('Discount must be between zero and the order subtotal.');
+    if(typeof deliveryFee!=='number'||!Number.isFinite(deliveryFee)||deliveryFee<0||deliveryFee>10000)throw fail('Delivery fee is invalid.');
+    const createdAt=new Date().toISOString(),intakeMethod=['walk_in','pickup','online'].includes(incoming.intakeMethod)?incoming.intakeMethod:'walk_in';
+    const order={id,number,branchId,customerId,...(assignedStaffId?{assignedStaffId}:{}),items,status:'received',priority:incoming.priority==='urgent'?'urgent':'normal',intakeMethod,createdAt,dueAt:new Date(dueTime).toISOString(),notes:textValue(incoming.notes,2000),discount,deliveryFee,events:[{id:`event-${randomUUID()}`,status:'received',at:createdAt,byUserId:user.id}]};
+    state.orders.unshift(order);state.activities.unshift(activity(branchId,user.id,`created ${number}`,'order'));
+    addNotification(state,orderNotification(state,order,user.id,assignedStaffId?'New assigned job':'New job intake',assigneeName?`${number} was assigned to ${assigneeName}.`:`${number} was received and is awaiting assignment.`));
+    auditMetadata={branchId,customerId,assignedStaffId:assignedStaffId||null};auditEntityType='order';auditEntityId=id;
+  }
+  else if(action.type==='UPDATE_ORDER_STATUS'){
+    const o=state.orders.find(x=>x.id===action.orderId);
+    if(!o||user.role==='customer'||!canBranch(user,o.branchId)||!state.branches.some(item=>item.id===o.branchId&&item.active))throw fail('Not authorized.',403);
+    if(user.role==='staff'&&o.assignedStaffId!==user.id)throw fail('This job is assigned to another staff member.',403);
+    const statusSequence=['received','sorting','washing','drying','ironing','quality_check','ready','out_for_delivery','collected'];
+    const currentStatusIndex=statusSequence.indexOf(o.status),nextStatus=currentStatusIndex>=0?statusSequence[currentStatusIndex+1]:undefined;
+    const cancelling=user.role==='admin'&&action.status==='cancelled'&&!['cancelled','collected'].includes(o.status);
+    if(action.status!==nextStatus&&!cancelling)throw fail('Move the order to its next workflow stage.');
+    o.status=action.status;if(action.status==='collected')o.collectedAt=new Date().toISOString();
+    o.events.push({id:`event-${randomUUID()}`,status:action.status,at:new Date().toISOString(),byUserId:user.id,note:textValue(action.note,1000)||undefined});
+    state.activities.unshift(activity(o.branchId,user.id,`moved ${o.number} to ${action.status.replaceAll('_',' ')}`,'order'));
+    addNotification(state,orderNotification(state,o,user.id,`${o.number} updated`,`Order moved to ${action.status.replaceAll('_',' ')}.`));
+    auditMetadata={status:action.status};auditEntityType='order';auditEntityId=o.id;
+  }
   else if(action.type==='ADD_PAYMENT'){const o=state.orders.find(x=>x.id===action.payment?.orderId);if(!o||user.role==='customer'||!canBranch(user,o.branchId)||!(action.payment.amount>0))throw fail('Invalid payment or permission.',403);state.payments.unshift({...action.payment,receivedByUserId:user.id});}
-  else if(action.type==='CREATE_PICKUP'){if((user.role==='customer'&&action.request?.customerId!==user.profile.customerId)||!canBranch(user,action.request?.branchId))throw fail('Not authorized.',403);state.pickupRequests.unshift(action.request);}
-  else if(action.type==='UPDATE_PICKUP'){const p=state.pickupRequests.find(x=>x.id===action.requestId);if(!p||user.role==='customer'||!canBranch(user,p.branchId))throw fail('Not authorized.',403);p.status=action.status;}
-  else if(action.type==='ADJUST_INVENTORY'){const i=state.inventory.find(x=>x.id===action.itemId);if(!i||user.role==='customer'||!canBranch(user,i.branchId))throw fail('Not authorized.',403);i.quantity=Math.max(0,i.quantity+Number(action.delta));}
+  else if(action.type==='CREATE_PICKUP'){if((user.role==='customer'&&action.request?.customerId!==user.profile.customerId)||!canBranch(user,action.request?.branchId)||!state.branches.some(item=>item.id===action.request?.branchId&&item.active))throw fail('Not authorized.',403);state.pickupRequests.unshift(action.request);}
+  else if(action.type==='UPDATE_PICKUP'){const p=state.pickupRequests.find(x=>x.id===action.requestId);if(!p||user.role==='customer'||!canBranch(user,p.branchId)||!state.branches.some(item=>item.id===p.branchId&&item.active))throw fail('Not authorized.',403);p.status=action.status;}
+  else if(action.type==='ADJUST_INVENTORY'){const i=state.inventory.find(x=>x.id===action.itemId);if(!i||user.role==='customer'||!canBranch(user,i.branchId)||!state.branches.some(item=>item.id===i.branchId&&item.active))throw fail('Not authorized.',403);i.quantity=Math.max(0,i.quantity+Number(action.delta));}
   else if(action.type==='CLOCK_TOGGLE'){const target=state.users.find(x=>x.id===action.userId);if(!target||target.active===false||(user.role!=='admin'&&user.id!==target.id))throw fail('Not authorized.',403);target.clockedIn=!target.clockedIn;if(target.clockedIn)target.lastClockIn=new Date().toISOString();}
+  else if(action.type==='MARK_ALL_NOTIFICATIONS_READ'){
+    let marked=0;
+    state.notifications=state.notifications.map(item=>{
+      if(!notificationRelatesToUser(state,item,user)||(item.readByUserIds||[]).includes(user.id))return item;
+      marked+=1;return {...item,readByUserIds:[...(item.readByUserIds||[]),user.id]};
+    });
+    auditMetadata={marked};auditEntityType='notification';auditEntityId='all';
+  }
   else throw fail('Unsupported action.');
   await c.query('UPDATE app_state SET payload=$1,updated_at=now() WHERE singleton=true',[JSON.stringify(state)]);
   await audit(c,user.id,`action.${action.type.toLowerCase()}`,req,auditMetadata,auditEntityType,auditEntityId);
