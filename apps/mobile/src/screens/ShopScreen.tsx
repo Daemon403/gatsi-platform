@@ -3,14 +3,10 @@ import {
   getActiveUser,
   makeId,
   money,
-  orderPaid,
-  orderTotal,
   shortDate,
-  visibleOrders,
   type ClothingItem,
   type ClothingSale,
 } from '@gatsi/domain';
-import { useNavigation } from '@react-navigation/native';
 import React, { useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { AppHeader } from '../components/AppHeader';
@@ -45,6 +41,7 @@ const draftFromItem = (item: ClothingItem): ClothingDraft => ({
 });
 
 type DraftValidation = { error: string } | { price: number; quantity: number; reorderLevel: number };
+type ClothingSaleWithListPrice = ClothingSale & { listUnitPrice: number };
 
 const validateDraft = (draft: ClothingDraft): DraftValidation => {
   const price = Number(draft.price);
@@ -58,13 +55,11 @@ const validateDraft = (draft: ClothingDraft): DraftValidation => {
   return { price, quantity, reorderLevel };
 };
 
-export function StockScreen() {
-  const { state } = useAppStore();
-  const user = getActiveUser(state)!;
-  return user.role === 'customer' ? <ReceiptsView /> : <InventoryView />;
+export function ShopScreen() {
+  return <ShopView />;
 }
 
-function InventoryView() {
+function ShopView() {
   const { state, dispatch } = useAppStore();
   const user = getActiveUser(state)!;
   const [creating, setCreating] = useState(false);
@@ -72,7 +67,6 @@ function InventoryView() {
   const [saleItemId, setSaleItemId] = useState<string | null>(null);
   const [adjustingItemId, setAdjustingItemId] = useState<string | null>(null);
   const [busyItemId, setBusyItemId] = useState<string | null>(null);
-  const [busyInventoryId, setBusyInventoryId] = useState<string | null>(null);
 
   const clothingItems = (state.clothingItems ?? []).filter((item) => (
     (state.activeBranchId === 'all' || item.branchId === state.activeBranchId)
@@ -81,8 +75,6 @@ function InventoryView() {
   const activeClothingItems = clothingItems.filter((item) => item.active);
   const lowClothingItems = activeClothingItems.filter((item) => item.quantity <= item.reorderLevel);
   const totalSaleableUnits = activeClothingItems.reduce((sum, item) => sum + item.quantity, 0);
-  const supplies = state.inventory.filter((item) => state.activeBranchId === 'all' || item.branchId === state.activeBranchId);
-  const lowSupplies = supplies.filter((item) => item.quantity <= item.reorderLevel);
   const recentSales = (state.clothingSales ?? [])
     .filter((sale) => state.activeBranchId === 'all' || sale.branchId === state.activeBranchId)
     .slice()
@@ -122,22 +114,8 @@ function InventoryView() {
     );
   };
 
-  const adjustSupply = async (itemId: string, delta: number) => {
-    if (busyInventoryId) return;
-    setBusyInventoryId(itemId);
-    try {
-      const selectedBranchId = state.activeBranchId;
-      const remoteState = await apiAction({ type: 'ADJUST_INVENTORY', itemId, delta, userId: user.id });
-      dispatch({ type: 'HYDRATE', state: { ...remoteState, activeBranchId: selectedBranchId } });
-    } catch (error) {
-      Alert.alert('Could not adjust stock', error instanceof Error ? error.message : 'The supply quantity could not be updated.');
-    } finally {
-      setBusyInventoryId(null);
-    }
-  };
-
   return <Screen>
-    <AppHeader title="Stock & retail" subtitle="Sell clothing and manage operating supplies" />
+    <AppHeader title="Shop" subtitle="Manage retail items, stock and negotiated sales" />
 
     <View style={styles.retailHero}>
       <View style={styles.flex}>
@@ -175,7 +153,7 @@ function InventoryView() {
         </View>
         <View style={styles.productStats}>
           <View><Text style={styles.productQuantity}>{item.quantity}</Text><Text style={styles.statLabel}>IN STOCK</Text></View>
-          <View><Text style={styles.productPrice}>{money(item.price)}</Text><Text style={styles.statLabel}>SELLING PRICE</Text></View>
+          <View><Text style={styles.productPrice}>{money(item.price)}</Text><Text style={styles.statLabel}>LIST PRICE</Text></View>
           <View><Text style={styles.reorderValue}>{item.reorderLevel}</Text><Text style={styles.statLabel}>REORDER AT</Text></View>
         </View>
         <View style={styles.productActions}>
@@ -222,39 +200,19 @@ function InventoryView() {
     {recentSales.map((sale) => {
       const item = (state.clothingItems ?? []).find((entry) => entry.id === sale.itemId);
       const seller = state.users.find((entry) => entry.id === sale.soldByUserId);
+      const listUnitPrice = (sale as ClothingSaleWithListPrice).listUnitPrice ?? sale.unitPrice;
       return <Card key={sale.id} style={styles.saleHistoryCard}>
         <View style={styles.saleHistoryIcon}><Feather name="check" size={17} color={colors.primary} /></View>
-        <View style={styles.flex}><Text style={styles.saleHistoryName}>{item?.name ?? 'Clothing item'}</Text><Text style={styles.saleHistoryMeta}>{sale.quantity} sold · {shortDate(sale.soldAt)} · {seller?.name ?? 'Team member'}</Text></View>
-        <Text style={styles.saleHistoryTotal}>{money(sale.total)}</Text>
+        <View style={styles.flex}>
+          <Text style={styles.saleHistoryName}>{item?.name ?? 'Clothing item'}</Text>
+          <Text style={styles.saleHistoryMeta}>{sale.quantity} sold · {shortDate(sale.soldAt)} · {seller?.name ?? 'Team member'}</Text>
+          <Text style={styles.saleHistoryPrices}>List {money(listUnitPrice)} → final {money(sale.unitPrice)} each</Text>
+        </View>
+        <View style={styles.saleHistoryAmount}><Text style={styles.saleHistoryTotal}>{money(sale.total)}</Text><Text style={styles.saleHistoryTotalLabel}>FINAL TOTAL</Text></View>
       </Card>;
     })}
     {!recentSales.length ? <Card><EmptyState icon="shopping-cart" title="No clothing sales" body="Completed clothing sales will appear here." /></Card> : null}
 
-    <SectionTitle title="Operating supplies" />
-    <View style={styles.inventoryHero}>
-      <View><Text style={styles.inventoryLabel}>Supply health</Text><Text style={styles.inventoryValue}>{lowSupplies.length ? `${lowSupplies.length} need attention` : 'All levels healthy'}</Text></View>
-      <Feather name={lowSupplies.length ? 'alert-triangle' : 'check-circle'} size={28} color={lowSupplies.length ? colors.amber : colors.primary} />
-    </View>
-    {supplies.map((item) => {
-      const branch = state.branches.find((entry) => entry.id === item.branchId);
-      const isLow = item.quantity <= item.reorderLevel;
-      const isBusy = busyInventoryId === item.id;
-      return <Card key={item.id} style={styles.stockCard}>
-        <View style={styles.stockTop}>
-          <View style={[styles.stockIcon, isLow && styles.stockIconLow]}><Feather name="droplet" size={20} color={isLow ? colors.amber : colors.primary} /></View>
-          <View style={styles.flex}><Text style={styles.stockName}>{item.name}</Text><Text style={styles.stockMeta}>{branch?.shortName} · Reorder at {item.reorderLevel} {item.unit}</Text></View>
-          {isLow ? <View style={styles.lowPill}><Text style={styles.lowText}>Low</Text></View> : null}
-        </View>
-        <View style={styles.stockBottom}>
-          <View><Text style={styles.stockQuantity}>{item.quantity} <Text style={styles.stockUnit}>{item.unit}</Text></Text><Text style={styles.stockCost}>{money(item.unitCost)} per {item.unit.replace(/s$/, '')}</Text></View>
-          <View style={styles.stockActions}>
-            <TouchableOpacity disabled={Boolean(busyInventoryId)} onPress={() => void adjustSupply(item.id, -1)} style={[styles.adjust, busyInventoryId && styles.disabled]}>{isBusy ? <ActivityIndicator size="small" color={colors.red} /> : <Feather name="minus" size={18} color={colors.red} />}</TouchableOpacity>
-            <TouchableOpacity disabled={Boolean(busyInventoryId)} onPress={() => void adjustSupply(item.id, 5)} style={[styles.adjust, styles.adjustAdd, busyInventoryId && styles.disabled]}><Feather name="plus" size={18} color={colors.primary} /></TouchableOpacity>
-          </View>
-        </View>
-      </Card>;
-    })}
-    {!supplies.length ? <EmptyState title="No operating supplies" body="There are no chemical, packaging or consumable stock records for this branch yet." /> : null}
   </Screen>;
 }
 
@@ -380,21 +338,26 @@ function SaleRecorder({ item, onClose }: { item: ClothingItem; onClose: () => vo
   const { state, dispatch } = useAppStore();
   const user = getActiveUser(state)!;
   const [quantity, setQuantity] = useState('1');
+  const [finalUnitPrice, setFinalUnitPrice] = useState(String(item.price));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   const record = async () => {
     if (saving) return;
     const parsedQuantity = Number(quantity);
+    const parsedFinalUnitPrice = Number(finalUnitPrice);
     if (!Number.isInteger(parsedQuantity) || parsedQuantity < 1) return setError('Sale quantity must be a positive whole number.');
     if (parsedQuantity > item.quantity) return setError(`Only ${item.quantity} unit${item.quantity === 1 ? '' : 's'} are currently in stock.`);
-    const sale: ClothingSale = {
+    if (!finalUnitPrice.trim() || !Number.isFinite(parsedFinalUnitPrice) || parsedFinalUnitPrice < 0 || parsedFinalUnitPrice > 1_000_000) return setError('Enter a valid negotiated price between zero and 1,000,000.');
+    const total = Number((parsedQuantity * parsedFinalUnitPrice).toFixed(2));
+    const sale: ClothingSaleWithListPrice = {
       id: makeId('clothing-sale'),
       itemId: item.id,
       branchId: item.branchId,
       quantity: parsedQuantity,
-      unitPrice: item.price,
-      total: parsedQuantity * item.price,
+      listUnitPrice: item.price,
+      unitPrice: parsedFinalUnitPrice,
+      total,
       soldAt: new Date().toISOString(),
       soldByUserId: user.id,
     };
@@ -405,7 +368,7 @@ function SaleRecorder({ item, onClose }: { item: ClothingItem; onClose: () => vo
       const remoteState = await apiAction({ type: 'RECORD_CLOTHING_SALE', sale });
       dispatch({ type: 'HYDRATE', state: { ...remoteState, activeBranchId: selectedBranchId } });
       onClose();
-      Alert.alert('Sale recorded', `${parsedQuantity} × ${item.name} sold for ${money(sale.total)}. Stock has been adjusted automatically.`);
+      Alert.alert('Sale recorded', `${parsedQuantity} × ${item.name} sold for ${money(sale.total)} at the negotiated price. Stock has been adjusted automatically.`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'The sale could not be recorded.');
     } finally {
@@ -413,14 +376,26 @@ function SaleRecorder({ item, onClose }: { item: ClothingItem; onClose: () => vo
     }
   };
 
-  const previewTotal = Number(quantity) > 0 ? Number(quantity) * item.price : 0;
+  const parsedQuantity = Number(quantity);
+  const parsedFinalUnitPrice = Number(finalUnitPrice);
+  const validQuantity = Number.isInteger(parsedQuantity) && parsedQuantity > 0 ? parsedQuantity : 0;
+  const validFinalUnitPrice = finalUnitPrice.trim() && Number.isFinite(parsedFinalUnitPrice) && parsedFinalUnitPrice >= 0 ? parsedFinalUnitPrice : 0;
+  const listTotal = Number((validQuantity * item.price).toFixed(2));
+  const finalTotal = Number((validQuantity * validFinalUnitPrice).toFixed(2));
+  const difference = Number((listTotal - finalTotal).toFixed(2));
   return <View style={styles.inlineForm}>
-    <FormHeading icon="shopping-cart" title="Record clothing sale" body={`${item.quantity} currently in stock. Recording this sale reduces the balance automatically.`} />
+    <FormHeading icon="shopping-cart" title="Record negotiated sale" body={`${item.quantity} currently in stock. The original list price is preserved with the final selling price.`} />
     <View style={styles.twoColumns}>
       <Input style={styles.halfField} label="Quantity *" value={quantity} editable={!saving} onChangeText={(value) => { setQuantity(value); setError(''); }} keyboardType="number-pad" />
-      <View style={styles.halfField}><Text style={styles.fieldLabel}>Unit price</Text><Text style={styles.fixedPrice}>{money(item.price)}</Text></View>
+      <View style={styles.halfField}><Text style={styles.fieldLabel}>Initial list price</Text><Text style={styles.fixedPrice}>{money(item.price)}</Text></View>
     </View>
-    <View style={styles.salePreview}><Text style={styles.salePreviewLabel}>Sale total</Text><Text style={styles.salePreviewValue}>{money(previewTotal)}</Text></View>
+    <Input label="Final negotiated unit price *" value={finalUnitPrice} editable={!saving} onChangeText={(value) => { setFinalUnitPrice(value); setError(''); }} keyboardType="decimal-pad" />
+    <View style={styles.priceComparison}>
+      <View><Text style={styles.comparisonLabel}>LIST TOTAL</Text><Text style={styles.comparisonList}>{money(listTotal)}</Text></View>
+      <Feather name="arrow-right" size={18} color={colors.muted} />
+      <View style={styles.comparisonFinal}><Text style={styles.comparisonLabel}>FINAL TOTAL</Text><Text style={styles.salePreviewValue}>{money(finalTotal)}</Text></View>
+    </View>
+    {difference !== 0 ? <Text style={[styles.negotiationDifference, difference < 0 && styles.negotiationMarkup]}>{difference > 0 ? `${money(difference)} below list price` : `${money(Math.abs(difference))} above list price`}</Text> : null}
     {error ? <ErrorNotice message={error} /> : null}
     <View style={styles.formActions}><PrimaryButton title="Cancel" icon="x" secondary compact disabled={saving} onPress={onClose} /><View style={styles.flex}><PrimaryButton title="Complete sale" icon="check" compact loading={saving} onPress={() => void record()} /></View></View>
   </View>;
@@ -473,13 +448,6 @@ function Choice({ label, selected, disabled, onPress }: { label: string; selecte
 
 function ErrorNotice({ message }: { message: string }) {
   return <View style={styles.errorNotice}><Feather name="alert-circle" size={16} color={colors.red} /><Text style={styles.errorText}>{message}</Text></View>;
-}
-
-function ReceiptsView() {
-  const { state } = useAppStore();
-  const navigation = useNavigation<any>();
-  const paidOrders = visibleOrders(state).filter((order) => orderPaid(state, order.id) > 0);
-  return <Screen><AppHeader title="Receipts" subtitle="Payments and order history" />{paidOrders.map((order) => { const paid = orderPaid(state, order.id); return <Card key={order.id} style={styles.receiptCard}><View style={styles.receiptIcon}><Feather name="file-text" size={22} color={colors.primary} /></View><View style={styles.flex}><Text style={styles.receiptNumber}>{order.number}</Text><Text style={styles.receiptMeta}>{shortDate(order.createdAt)} · {order.items.length} service line{order.items.length > 1 ? 's' : ''}</Text><Text style={styles.receiptAmount}>{money(paid)} paid <Text style={styles.receiptTotal}>/ {money(orderTotal(order))}</Text></Text></View><TouchableOpacity onPress={() => navigation.navigate('Receipt', { orderId: order.id })} style={styles.receiptOpen}><Feather name="chevron-right" size={20} color={colors.primary} /></TouchableOpacity></Card>; })}{!paidOrders.length ? <EmptyState icon="file-text" title="No receipts yet" body="Receipts appear here as soon as a payment is recorded." /> : null}</Screen>;
 }
 
 const styles = StyleSheet.create({

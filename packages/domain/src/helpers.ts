@@ -1,5 +1,5 @@
 import { statusSequence } from './data';
-import type { AppNotification, AppState, Order, OrderStatus, Role, User } from './types';
+import type { AppNotification, AppState, ClothingSale, Order, OrderStatus, Role, User } from './types';
 
 export const money = (value: number) =>
   new Intl.NumberFormat('en-ZW', { style: 'currency', currency: 'USD' }).format(value);
@@ -50,11 +50,24 @@ export const normalizeNotifications = (value: unknown): AppNotification[] => {
     }));
 };
 
+export const normalizeClothingSales = (value: unknown): ClothingSale[] => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is ClothingSale => Boolean(item && typeof item === 'object'))
+    .map((item) => {
+      const legacyItem = item as ClothingSale & { listUnitPrice?: number };
+      const listUnitPrice = typeof legacyItem.listUnitPrice === 'number' && Number.isFinite(legacyItem.listUnitPrice)
+        ? legacyItem.listUnitPrice
+        : Number(legacyItem.unitPrice ?? 0);
+      return { ...legacyItem, listUnitPrice };
+    });
+};
+
 export const migrateAccounts = (state: AppState): AppState => ({
   ...state,
   notifications: normalizeNotifications(state.notifications),
   clothingItems: Array.isArray(state.clothingItems) ? state.clothingItems : [],
-  clothingSales: Array.isArray(state.clothingSales) ? state.clothingSales : [],
+  clothingSales: normalizeClothingSales(state.clothingSales),
   users: state.users.map((user) => {
     const seeded = seededAccounts[user.id];
     return { ...user, username: user.username ?? seeded?.username, password: user.password ?? seeded?.password, verified: user.verified ?? Boolean(user.username || seeded), active: user.active ?? true };

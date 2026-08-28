@@ -1,5 +1,5 @@
 import { createDemoState } from './data';
-import { makeId, normalizeNotifications, notificationRelatesToUser } from './helpers';
+import { makeId, normalizeClothingSales, normalizeNotifications, notificationRelatesToUser } from './helpers';
 import type { Activity, AppAction, AppNotification, AppState, Order } from './types';
 
 const activity = (state: AppState, values: Omit<Activity, 'id' | 'at'>): Activity => ({
@@ -40,7 +40,7 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
           ...action.state,
           notifications: normalizeNotifications(action.state.notifications),
           clothingItems: Array.isArray(action.state.clothingItems) ? action.state.clothingItems : [],
-          clothingSales: Array.isArray(action.state.clothingSales) ? action.state.clothingSales : [],
+          clothingSales: normalizeClothingSales(action.state.clothingSales),
         }
         : state;
     case 'LOGIN': {
@@ -144,11 +144,28 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
     }
     case 'RECORD_CLOTHING_SALE': {
       const item = (state.clothingItems ?? []).find((entry) => entry.id === action.sale.itemId);
-      if (!item || !Number.isInteger(action.sale.quantity) || action.sale.quantity < 1 || action.sale.quantity > item.quantity) return state;
+      const unitPrice = action.sale.unitPrice;
+      if (
+        !item
+        || !Number.isInteger(action.sale.quantity)
+        || action.sale.quantity < 1
+        || action.sale.quantity > item.quantity
+        || typeof unitPrice !== 'number'
+        || !Number.isFinite(unitPrice)
+        || unitPrice < 0
+        || unitPrice > 1_000_000
+      ) return state;
+      const sale = {
+        ...action.sale,
+        branchId: item.branchId,
+        listUnitPrice: item.price,
+        unitPrice,
+        total: Number((unitPrice * action.sale.quantity).toFixed(2)),
+      };
       return {
         ...state,
         clothingItems: state.clothingItems.map((entry) => entry.id === item.id ? { ...entry, quantity: entry.quantity - action.sale.quantity } : entry),
-        clothingSales: [action.sale, ...(state.clothingSales ?? [])],
+        clothingSales: [sale, ...(state.clothingSales ?? [])],
         activities: [activity(state, {
           branchId: item.branchId,
           userId: action.sale.soldByUserId,

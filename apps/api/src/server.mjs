@@ -21,7 +21,8 @@ const reportError = async (error, req) => { console.error(JSON.stringify({ level
 async function migrate() { await query('CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())'); const { readdir, readFile } = await import('node:fs/promises'); const { dirname, resolve } = await import('node:path'); const { fileURLToPath } = await import('node:url'); const dir=resolve(dirname(fileURLToPath(import.meta.url)),'../migrations'); const applied=new Set((await query('SELECT version FROM schema_migrations')).rows.map(r=>r.version)); for(const file of (await readdir(dir)).filter(f=>f.endsWith('.sql')).sort()){if(applied.has(file))continue;const sql=await readFile(resolve(dir,file),'utf8');await transaction(async c=>{await c.query(sql);await c.query('INSERT INTO schema_migrations(version) VALUES($1)',[file]);});} }
 async function seed() { await transaction(async c => { await c.query("INSERT INTO app_state(singleton,payload) VALUES(true,$1) ON CONFLICT(singleton) DO NOTHING",[JSON.stringify(emptyState)]); for(const [id,role,name,username,password,branchIds,customerId] of credentials){const profile={id,role,name,username,branchIds,customerId,email:'',phone:'',avatarColor:'#008D4C',verified:true,active:true};await c.query('INSERT INTO users(id,username,username_normalized,password_hash,role,verified_at,active,profile) VALUES($1,$2,$3,$4,$5,now(),true,$6) ON CONFLICT(id) DO NOTHING',[id,username,username.toLowerCase(),passwordHash(password),role,JSON.stringify(profile)]);} const state=(await c.query('SELECT payload FROM app_state WHERE singleton=true')).rows[0].payload;if(!state.users?.length){state.users=credentials.map(([id,role,name,username,,branchIds,customerId])=>({id,role,name,username,branchIds,customerId,email:'',phone:'',avatarColor:'#008D4C',verified:true,active:true}));await c.query('UPDATE app_state SET payload=$1,updated_at=now() WHERE singleton=true',[JSON.stringify(state)]);} }); }
 const normalizeNotifications = (value) => Array.isArray(value)?value.filter(item=>item&&typeof item==='object'&&typeof item.id==='string'&&typeof item.title==='string'&&typeof item.message==='string'&&typeof item.at==='string').map(item=>({...item,recipientUserIds:Array.isArray(item.recipientUserIds)?item.recipientUserIds.filter(id=>typeof id==='string'):[],readByUserIds:Array.isArray(item.readByUserIds)?item.readByUserIds.filter(id=>typeof id==='string'):[]})).slice(0,500):[];
-const normalizeState = (state) => ({...state,notifications:normalizeNotifications(state?.notifications),clothingItems:Array.isArray(state?.clothingItems)?state.clothingItems:[],clothingSales:Array.isArray(state?.clothingSales)?state.clothingSales:[]});
+const normalizeClothingSales = (value) => Array.isArray(value)?value.filter(item=>item&&typeof item==='object').map(item=>({...item,listUnitPrice:typeof item.listUnitPrice==='number'&&Number.isFinite(item.listUnitPrice)?item.listUnitPrice:Number(item.unitPrice??0)})):[];
+const normalizeState = (state) => ({...state,notifications:normalizeNotifications(state?.notifications),clothingItems:Array.isArray(state?.clothingItems)?state.clothingItems:[],clothingSales:normalizeClothingSales(state?.clothingSales)});
 const loadState = async (client=pool) => normalizeState((await client.query('SELECT payload FROM app_state WHERE singleton=true')).rows[0].payload);
 const publicUsers = (state) => ({...state,users:state.users.map(({password,passwordHash,...u})=>u)});
 const scoped = (state,user) => {
@@ -379,18 +380,19 @@ async function mutate(user,action,req){return transaction(async c=>{
   }
   else if(action.type==='RECORD_CLOTHING_SALE'){
     if(user.role==='customer')throw fail('Not authorized.',403);
-    const incoming=action.sale||{},id=textValue(incoming.id,128),itemId=textValue(incoming.itemId,128),quantity=incoming.quantity;
+    const incoming=action.sale||{},id=textValue(incoming.id,128),itemId=textValue(incoming.itemId,128),quantity=incoming.quantity,unitPrice=incoming.unitPrice;
     const target=state.clothingItems.find(item=>item.id===itemId);
     if(!id||!target)throw fail('Choose a valid clothing item.');
     if(state.clothingSales.some(sale=>sale.id===id))throw fail('Sale ID already exists.',409);
     if(!target.active||!state.branches.some(item=>item.id===target.branchId&&item.active)||!canBranch(user,target.branchId))throw fail('Not authorized for this item.',403);
     if(!Number.isInteger(quantity)||quantity<1)throw fail('Sale quantity must be a positive whole number.');
     if(quantity>target.quantity)throw fail(`Only ${target.quantity} unit${target.quantity===1?' is':'s are'} available.`,409);
-    const unitPrice=target.price,total=Number((unitPrice*quantity).toFixed(2)),soldAt=new Date().toISOString();
-    const sale={id,itemId,branchId:target.branchId,quantity,unitPrice,total,soldAt,soldByUserId:user.id};
+    if(typeof unitPrice!=='number'||!Number.isFinite(unitPrice)||unitPrice<0||unitPrice>1000000)throw fail('Negotiated selling price is invalid.');
+    const listUnitPrice=target.price,listTotal=Number((listUnitPrice*quantity).toFixed(2)),total=Number((unitPrice*quantity).toFixed(2)),soldAt=new Date().toISOString();
+    const sale={id,itemId,branchId:target.branchId,quantity,listUnitPrice,unitPrice,total,soldAt,soldByUserId:user.id};
     target.quantity-=quantity;state.clothingSales.unshift(sale);
     state.activities.unshift(activity(target.branchId,user.id,`sold ${quantity} ${target.name}`,'inventory'));
-    auditMetadata={itemId,quantity,unitPrice,total};auditEntityType='clothing_sale';auditEntityId=id;
+    auditMetadata={itemId,quantity,listUnitPrice,negotiatedUnitPrice:unitPrice,listTotal,total,priceDifference:Number((total-listTotal).toFixed(2))};auditEntityType='clothing_sale';auditEntityId=id;
   }
   else if(action.type==='CLOCK_TOGGLE'){const target=state.users.find(x=>x.id===action.userId);if(!target||target.active===false||(user.role!=='admin'&&user.id!==target.id))throw fail('Not authorized.',403);target.clockedIn=!target.clockedIn;if(target.clockedIn)target.lastClockIn=new Date().toISOString();}
   else if(action.type==='MARK_ALL_NOTIFICATIONS_READ'){

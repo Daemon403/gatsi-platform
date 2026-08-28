@@ -178,6 +178,7 @@ export type ClothingSale = {
   itemId: string;
   branchId: string;
   quantity: number;
+  listUnitPrice: number;
   unitPrice: number;
   total: number;
   soldAt: string;
