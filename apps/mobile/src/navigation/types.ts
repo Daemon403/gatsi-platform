@@ -7,6 +7,7 @@ export type RootStackParamList = {
   Team: undefined;
   Branches: undefined;
   ServicesManagement: undefined;
+  Shop: undefined;
   Notifications: undefined;
   Profile: undefined;
   OperationsSummaries: undefined;

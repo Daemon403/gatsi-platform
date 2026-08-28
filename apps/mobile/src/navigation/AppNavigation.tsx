@@ -19,6 +19,7 @@ import { PickupRequestScreen } from '../screens/PickupRequestScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
 import { ReceiptScreen } from '../screens/ReceiptScreen';
 import { ServicesManagementScreen } from '../screens/ServicesManagementScreen';
+import { ShopScreen } from '../screens/ShopScreen';
 import { StockScreen } from '../screens/StockScreen';
 import { TeamScreen } from '../screens/TeamScreen';
 import { useAppStore } from '../store/AppStore';
@@ -73,6 +74,7 @@ export function AppNavigation() {
         <Root.Screen name="Receipt" component={ReceiptScreen} />
         <Root.Screen name="Notifications" component={NotificationsScreen} />
         <Root.Screen name="Profile" component={ProfileScreen} />
+        {role !== 'customer' ? <Root.Screen name="Shop" component={ShopScreen} /> : null}
         {role !== 'customer' ? <Root.Screen name="Team" component={TeamScreen} /> : null}
         {role === 'admin' ? <Root.Screen name="Branches" component={BranchesScreen} /> : null}
         {role === 'admin' ? <Root.Screen name="ServicesManagement" component={ServicesManagementScreen} /> : null}

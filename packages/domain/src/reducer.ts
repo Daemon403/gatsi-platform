@@ -154,6 +154,7 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
         || !Number.isFinite(unitPrice)
         || unitPrice < 0
         || unitPrice > 1_000_000
+        || Math.abs(unitPrice - Number(unitPrice.toFixed(2))) > 1e-9
       ) return state;
       const sale = {
         ...action.sale,

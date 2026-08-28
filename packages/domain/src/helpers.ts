@@ -53,13 +53,16 @@ export const normalizeNotifications = (value: unknown): AppNotification[] => {
 export const normalizeClothingSales = (value: unknown): ClothingSale[] => {
   if (!Array.isArray(value)) return [];
   return value
-    .filter((item): item is ClothingSale => Boolean(item && typeof item === 'object'))
+    .filter((item): item is ClothingSale => Boolean(item && typeof item === 'object' && !Array.isArray(item)))
     .map((item) => {
       const legacyItem = item as ClothingSale & { listUnitPrice?: number };
+      const legacyUnitPrice = typeof legacyItem.unitPrice === 'number' && Number.isFinite(legacyItem.unitPrice)
+        ? legacyItem.unitPrice
+        : 0;
       const listUnitPrice = typeof legacyItem.listUnitPrice === 'number' && Number.isFinite(legacyItem.listUnitPrice)
         ? legacyItem.listUnitPrice
-        : Number(legacyItem.unitPrice ?? 0);
-      return { ...legacyItem, listUnitPrice };
+        : legacyUnitPrice;
+      return { ...legacyItem, listUnitPrice, unitPrice: legacyUnitPrice };
     });
 };
 

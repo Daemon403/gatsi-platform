@@ -14,6 +14,7 @@ import { PickupPage } from './pages/PickupPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { ReceiptsPage } from './pages/ReceiptsPage';
 import { ServicesPage } from './pages/ServicesPage';
+import { ShopPage } from './pages/ShopPage';
 import { TeamPage } from './pages/TeamPage';
 import { useAppStore } from './store/AppStore';
 
@@ -28,6 +29,7 @@ export function App() {
     <Route path="/orders/:orderId" element={<OrderDetailPage />} />
     <Route path="/customers" element={user.role === 'admin' ? <CustomersPage /> : <Navigate to="/" />} />
     <Route path="/inventory" element={user.role === 'customer' ? <Navigate to="/" /> : <InventoryPage />} />
+    <Route path="/shop" element={user.role === 'customer' ? <Navigate to="/" /> : <ShopPage />} />
     <Route path="/team" element={user.role === 'customer' ? <Navigate to="/" /> : <TeamPage />} />
     <Route path="/branches" element={user.role === 'admin' ? <BranchesPage /> : <Navigate to="/" />} />
     <Route path="/services" element={<ServicesPage />} />

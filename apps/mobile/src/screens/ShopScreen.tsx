@@ -327,7 +327,7 @@ function ClothingFields({ draft, branches, disabled, onChange, showQuantity = fa
       <Input style={styles.halfField} label="Colour *" value={draft.color} editable={!disabled} onChangeText={(value) => onChange('color', value)} autoCapitalize="words" />
     </View>
     <View style={styles.twoColumns}>
-      <Input style={styles.halfField} label="Selling price *" value={draft.price} editable={!disabled} onChangeText={(value) => onChange('price', value)} keyboardType="decimal-pad" />
+      <Input style={styles.halfField} label="List price *" value={draft.price} editable={!disabled} onChangeText={(value) => onChange('price', value)} keyboardType="decimal-pad" />
       <Input style={styles.halfField} label="Reorder at *" value={draft.reorderLevel} editable={!disabled} onChangeText={(value) => onChange('reorderLevel', value)} keyboardType="number-pad" />
     </View>
     {showQuantity ? <Input label="Opening quantity *" value={draft.quantity} editable={!disabled} onChangeText={(value) => onChange('quantity', value)} keyboardType="number-pad" /> : null}
@@ -348,7 +348,7 @@ function SaleRecorder({ item, onClose }: { item: ClothingItem; onClose: () => vo
     const parsedFinalUnitPrice = Number(finalUnitPrice);
     if (!Number.isInteger(parsedQuantity) || parsedQuantity < 1) return setError('Sale quantity must be a positive whole number.');
     if (parsedQuantity > item.quantity) return setError(`Only ${item.quantity} unit${item.quantity === 1 ? '' : 's'} are currently in stock.`);
-    if (!finalUnitPrice.trim() || !Number.isFinite(parsedFinalUnitPrice) || parsedFinalUnitPrice < 0 || parsedFinalUnitPrice > 1_000_000) return setError('Enter a valid negotiated price between zero and 1,000,000.');
+    if (!finalUnitPrice.trim() || !Number.isFinite(parsedFinalUnitPrice) || parsedFinalUnitPrice < 0 || parsedFinalUnitPrice > 1_000_000 || Math.abs(parsedFinalUnitPrice - Number(parsedFinalUnitPrice.toFixed(2))) > 1e-9) return setError('Enter a valid negotiated price between zero and 1,000,000 with no more than two decimal places.');
     const total = Number((parsedQuantity * parsedFinalUnitPrice).toFixed(2));
     const sale: ClothingSaleWithListPrice = {
       id: makeId('clothing-sale'),
@@ -504,8 +504,6 @@ const styles = StyleSheet.create({
   formActions: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   errorNotice: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, padding: 10, borderRadius: radius.sm, backgroundColor: colors.redSoft },
   errorText: { flex: 1, color: colors.red, fontSize: 10, lineHeight: 15, fontWeight: '700' },
-  salePreview: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 11, borderRadius: radius.sm, backgroundColor: colors.primaryLight },
-  salePreviewLabel: { color: colors.primary, fontSize: 11, fontWeight: '800' },
   salePreviewValue: { color: colors.primaryDark, fontSize: 16, fontWeight: '900' },
   fixedPrice: { minHeight: 48, paddingHorizontal: 13, paddingVertical: 14, borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, color: colors.ink, fontSize: 13, fontWeight: '900', backgroundColor: colors.background },
   adjustmentPreview: { color: colors.primary, fontSize: 12, fontWeight: '800' },
@@ -513,29 +511,16 @@ const styles = StyleSheet.create({
   saleHistoryIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center' },
   saleHistoryName: { color: colors.ink, fontSize: 12, fontWeight: '900' },
   saleHistoryMeta: { color: colors.muted, fontSize: 9, marginTop: 4 },
+  saleHistoryPrices: { color: colors.muted, fontSize: 9, fontWeight: '700', marginTop: 4 },
+  saleHistoryAmount: { alignItems: 'flex-end' },
   saleHistoryTotal: { color: colors.primary, fontSize: 12, fontWeight: '900' },
-  inventoryHero: { padding: 18, borderRadius: radius.lg, backgroundColor: colors.primaryLight, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 13 },
-  inventoryLabel: { color: colors.primary, fontSize: 12, fontWeight: '700' },
-  inventoryValue: { color: colors.ink, fontSize: 19, fontWeight: '900', marginTop: 4 },
-  stockCard: { padding: 16, marginBottom: 12 },
-  stockTop: { flexDirection: 'row', alignItems: 'center', gap: 11 },
-  stockIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center' },
+  saleHistoryTotalLabel: { color: colors.subtle, fontSize: 7, fontWeight: '800', marginTop: 3 },
+  priceComparison: { padding: 12, borderRadius: radius.sm, backgroundColor: colors.primaryLight, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  comparisonLabel: { color: colors.muted, fontSize: 8, fontWeight: '800' },
+  comparisonList: { color: colors.ink, fontSize: 15, fontWeight: '900', marginTop: 4 },
+  comparisonFinal: { alignItems: 'flex-end' },
+  negotiationDifference: { color: colors.primary, fontSize: 10, fontWeight: '800', textAlign: 'center' },
+  negotiationMarkup: { color: colors.amber },
   stockIconLow: { backgroundColor: colors.amberSoft },
-  stockName: { color: colors.ink, fontSize: 14, fontWeight: '800' },
-  stockMeta: { color: colors.muted, fontSize: 10, marginTop: 4 },
-  stockBottom: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 13, marginTop: 13 },
-  stockQuantity: { color: colors.ink, fontSize: 19, fontWeight: '900' },
-  stockUnit: { color: colors.muted, fontSize: 11, fontWeight: '600' },
-  stockCost: { color: colors.subtle, fontSize: 10, marginTop: 3 },
-  stockActions: { flexDirection: 'row', gap: 8 },
-  adjust: { width: 38, height: 38, borderRadius: 11, backgroundColor: colors.redSoft, alignItems: 'center', justifyContent: 'center' },
-  adjustAdd: { backgroundColor: colors.primaryLight },
   disabled: { opacity: 0.45 },
-  receiptCard: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 15, marginBottom: 11 },
-  receiptIcon: { width: 47, height: 47, borderRadius: 15, backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center' },
-  receiptNumber: { color: colors.ink, fontWeight: '900', fontSize: 14 },
-  receiptMeta: { color: colors.muted, fontSize: 10, marginTop: 4 },
-  receiptAmount: { color: colors.primary, fontSize: 12, fontWeight: '800', marginTop: 6 },
-  receiptTotal: { color: colors.subtle, fontWeight: '600' },
-  receiptOpen: { width: 37, height: 37, borderRadius: 12, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
 });

@@ -1,5 +1,5 @@
 import { getActiveUser, visibleNotifications, type AppNotification, type Role } from '@gatsi/domain';
-import { Bell, Boxes, Building2, ChartNoAxesCombined, ClipboardCheck, CreditCard, Home, LogOut, MapPin, Menu, Package2, ReceiptText, Scissors, Shirt, Truck, UserRound, UsersRound, X } from 'lucide-react';
+import { Bell, Boxes, Building2, ChartNoAxesCombined, ClipboardCheck, CreditCard, Home, LogOut, MapPin, Menu, Package2, ReceiptText, Scissors, Shirt, Store, Truck, UserRound, UsersRound, X } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { useAppStore } from '../store/AppStore';
@@ -11,6 +11,7 @@ const navigation = (role: Role): NavItem[] => role === 'admin' ? [
   { label: 'Orders', path: '/orders', icon: <Package2 /> },
   { label: 'Customers', path: '/customers', icon: <UsersRound /> },
   { label: 'Inventory', path: '/inventory', icon: <Boxes /> },
+  { label: 'Store', path: '/shop', icon: <Store /> },
   { label: 'Team', path: '/team', icon: <ClipboardCheck /> },
   { label: 'Branches', path: '/branches', icon: <Building2 /> },
   { label: 'Services', path: '/services', icon: <Scissors /> },
@@ -19,6 +20,7 @@ const navigation = (role: Role): NavItem[] => role === 'admin' ? [
   { label: 'Workspace', path: '/', icon: <Home /> },
   { label: 'Orders', path: '/orders', icon: <Package2 /> },
   { label: 'Inventory', path: '/inventory', icon: <Boxes /> },
+  { label: 'Store', path: '/shop', icon: <Store /> },
   { label: 'Team', path: '/team', icon: <ClipboardCheck /> },
   { label: 'Services', path: '/services', icon: <Scissors /> },
 ] : [

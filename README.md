@@ -30,7 +30,7 @@ These credentials are for local development. Production credentials live in prot
 
 PostgreSQL is the system of record. Web and mobile retain a local resilience cache while authenticated mutations synchronize through the API.
 
-Administrators can maintain branches, services, staff, customers, their own login username and profile, and saleable clothing stock. Clothing sales reduce stock atomically and remain in sales history. Daily operations summaries are stored separately from role-scoped app state and include branch, order, payment, pickup, staffing, supply and clothing-sales metrics.
+Administrators can maintain branches, services, staff, customers, their own login username and profile, and saleable clothing stock. A dedicated Store view keeps retail products separate from services and operating inventory; each sale preserves the original list price alongside its final negotiated price, reduces stock atomically and remains in sales history. Daily operations summaries are stored separately from role-scoped app state and include branch, order, payment, pickup, staffing, supply and clothing-sales metrics.
 
 ## Included branches
 

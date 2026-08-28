@@ -46,6 +46,12 @@ export function MoreScreen() {
           detail={currentUser.role === 'admin' ? 'Add, assign, archive and restore staff accounts' : 'View teammates assigned to your branches'}
           onPress={() => navigation.navigate('Team')}
         />
+        <MenuItem
+          icon="shopping-bag"
+          title="Store"
+          detail={currentUser.role === 'admin' ? 'Manage retail products, stock and negotiated sales' : 'View products and record negotiated sales'}
+          onPress={() => navigation.navigate('Shop')}
+        />
         {canViewBranches ? <MenuItem
           icon="map-pin"
           title="Branches"

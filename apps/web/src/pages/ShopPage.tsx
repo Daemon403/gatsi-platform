@@ -90,8 +90,9 @@ export function ShopPage() {
     setError('');
     setMessage('');
     try {
+      const selectedBranchId = state.activeBranchId;
       const remoteState = await apiAction(action);
-      dispatch({ type: 'HYDRATE', state: remoteState });
+      dispatch({ type: 'HYDRATE', state: user.role === 'admin' ? { ...remoteState, activeBranchId: selectedBranchId } : remoteState });
       setMessage(successMessage);
       return remoteState;
     } catch (reason) {
@@ -179,10 +180,11 @@ export function ShopPage() {
 
   const recordSale = async (item: ClothingItem) => {
     const quantity = Number(saleQuantities[item.id] ?? '1');
-    const finalUnitPrice = Number(negotiatedPrices[item.id] ?? String(item.price));
+    const finalPriceText = negotiatedPrices[item.id] ?? String(item.price);
+    const finalUnitPrice = Number(finalPriceText);
     if (!Number.isInteger(quantity) || quantity < 1) { setError('Sale quantity must be a whole number of at least one.'); return; }
     if (quantity > item.quantity) { setError(`Only ${item.quantity} ${item.name} item(s) are in stock.`); return; }
-    if (!Number.isFinite(finalUnitPrice) || finalUnitPrice < 0 || finalUnitPrice > 1_000_000) { setError('Enter a negotiated unit price from 0 to 1,000,000.'); return; }
+    if (!finalPriceText.trim() || !Number.isFinite(finalUnitPrice) || finalUnitPrice < 0 || finalUnitPrice > 1_000_000 || Math.abs(finalUnitPrice - roundMoney(finalUnitPrice)) > 1e-9) { setError('Enter a negotiated unit price from 0 to 1,000,000 using no more than two decimal places.'); return; }
 
     const listUnitPrice = item.price;
     const listTotal = roundMoney(listUnitPrice * quantity);
