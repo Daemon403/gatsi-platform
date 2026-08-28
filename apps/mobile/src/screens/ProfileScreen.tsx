@@ -23,8 +23,8 @@ export function ProfileScreen() {
   const save = async () => {
     if (saving) return;
     if (!draft.name.trim() || !draft.phone.trim()) return Alert.alert('Details needed', 'Name and phone are required.');
-    if (user.role === 'admin' && !/^[A-Za-z0-9._-]{3,50}$/.test((draft.username ?? '').trim())) {
-      return Alert.alert('Invalid username', 'Use 3 to 50 letters, numbers, dots, underscores or hyphens, without spaces.');
+    if (user.role === 'admin' && !/^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$/.test((draft.username ?? '').trim())) {
+      return Alert.alert('Invalid username', 'Use 3 to 64 characters, starting with a letter or number, followed by letters, numbers, dots, underscores or hyphens.');
     }
     setSaving(true);
     try {

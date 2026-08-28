@@ -74,7 +74,10 @@ function InventoryView() {
   const [busyItemId, setBusyItemId] = useState<string | null>(null);
   const [busyInventoryId, setBusyInventoryId] = useState<string | null>(null);
 
-  const clothingItems = (state.clothingItems ?? []).filter((item) => state.activeBranchId === 'all' || item.branchId === state.activeBranchId);
+  const clothingItems = (state.clothingItems ?? []).filter((item) => (
+    (state.activeBranchId === 'all' || item.branchId === state.activeBranchId)
+    && (user.role === 'admin' || item.active)
+  ));
   const activeClothingItems = clothingItems.filter((item) => item.active);
   const lowClothingItems = activeClothingItems.filter((item) => item.quantity <= item.reorderLevel);
   const totalSaleableUnits = activeClothingItems.reduce((sum, item) => sum + item.quantity, 0);
@@ -377,24 +380,21 @@ function SaleRecorder({ item, onClose }: { item: ClothingItem; onClose: () => vo
   const { state, dispatch } = useAppStore();
   const user = getActiveUser(state)!;
   const [quantity, setQuantity] = useState('1');
-  const [unitPrice, setUnitPrice] = useState(String(item.price));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   const record = async () => {
     if (saving) return;
     const parsedQuantity = Number(quantity);
-    const parsedPrice = Number(unitPrice);
     if (!Number.isInteger(parsedQuantity) || parsedQuantity < 1) return setError('Sale quantity must be a positive whole number.');
     if (parsedQuantity > item.quantity) return setError(`Only ${item.quantity} unit${item.quantity === 1 ? '' : 's'} are currently in stock.`);
-    if (!unitPrice.trim() || !Number.isFinite(parsedPrice) || parsedPrice < 0 || parsedPrice > 1_000_000) return setError('Enter a valid unit selling price.');
     const sale: ClothingSale = {
       id: makeId('clothing-sale'),
       itemId: item.id,
       branchId: item.branchId,
       quantity: parsedQuantity,
-      unitPrice: parsedPrice,
-      total: parsedQuantity * parsedPrice,
+      unitPrice: item.price,
+      total: parsedQuantity * item.price,
       soldAt: new Date().toISOString(),
       soldByUserId: user.id,
     };
@@ -413,12 +413,12 @@ function SaleRecorder({ item, onClose }: { item: ClothingItem; onClose: () => vo
     }
   };
 
-  const previewTotal = Number(quantity) > 0 && Number(unitPrice) >= 0 ? Number(quantity) * Number(unitPrice) : 0;
+  const previewTotal = Number(quantity) > 0 ? Number(quantity) * item.price : 0;
   return <View style={styles.inlineForm}>
     <FormHeading icon="shopping-cart" title="Record clothing sale" body={`${item.quantity} currently in stock. Recording this sale reduces the balance automatically.`} />
     <View style={styles.twoColumns}>
       <Input style={styles.halfField} label="Quantity *" value={quantity} editable={!saving} onChangeText={(value) => { setQuantity(value); setError(''); }} keyboardType="number-pad" />
-      <Input style={styles.halfField} label="Unit price *" value={unitPrice} editable={!saving} onChangeText={(value) => { setUnitPrice(value); setError(''); }} keyboardType="decimal-pad" />
+      <View style={styles.halfField}><Text style={styles.fieldLabel}>Unit price</Text><Text style={styles.fixedPrice}>{money(item.price)}</Text></View>
     </View>
     <View style={styles.salePreview}><Text style={styles.salePreviewLabel}>Sale total</Text><Text style={styles.salePreviewValue}>{money(previewTotal)}</Text></View>
     {error ? <ErrorNotice message={error} /> : null}
@@ -539,6 +539,7 @@ const styles = StyleSheet.create({
   salePreview: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 11, borderRadius: radius.sm, backgroundColor: colors.primaryLight },
   salePreviewLabel: { color: colors.primary, fontSize: 11, fontWeight: '800' },
   salePreviewValue: { color: colors.primaryDark, fontSize: 16, fontWeight: '900' },
+  fixedPrice: { minHeight: 48, paddingHorizontal: 13, paddingVertical: 14, borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, color: colors.ink, fontSize: 13, fontWeight: '900', backgroundColor: colors.background },
   adjustmentPreview: { color: colors.primary, fontSize: 12, fontWeight: '800' },
   saleHistoryCard: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 13, marginBottom: 9 },
   saleHistoryIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center' },
