@@ -111,6 +111,8 @@ export const createDemoState = (): AppState => ({
     { id: 'inv-mur-detergent', branchId: 'branch-murewa', name: 'Commercial detergent', category: 'chemical', unit: 'litres', quantity: 19, reorderLevel: 15, unitCost: 2.1 },
     { id: 'inv-mur-bags', branchId: 'branch-murewa', name: 'Garment covers', category: 'packaging', unit: 'pieces', quantity: 27, reorderLevel: 30, unitCost: 0.18 },
   ],
+  clothingItems: [],
+  clothingSales: [],
   activities: [
     { id: 'activity-1', branchId: 'branch-cbd', userId: 'user-rudo-staff', message: 'marked GAT-2608-1049 ready for collection', kind: 'order', at: '2026-08-21T09:15:00.000Z' },
     { id: 'activity-2', branchId: 'branch-avondale', userId: 'user-mary', message: 'started ironing GAT-2608-1052', kind: 'order', at: '2026-08-21T08:55:00.000Z' },

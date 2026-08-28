@@ -1,6 +1,7 @@
-import { createHmac, randomUUID } from 'node:crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 import { pool, query, transaction } from './db.mjs';
+import { generateAndStoreDailyOperationsSummary, listDailyOperationsSummaries, previousHarareDateKey, validSummaryDate } from './operations-summary.mjs';
 import { newToken, passwordAcceptable, passwordHash, passwordValid, safeUser, tokenHash, tokenHashes } from './security.mjs';
 
 const port = Number(process.env.PORT || 4000); const host = process.env.HOST || '0.0.0.0'; const production = process.env.NODE_ENV === 'production';
@@ -9,7 +10,7 @@ const accessMinutes = Number(process.env.ACCESS_TOKEN_MINUTES || 15); const refr
 const developmentCredentials = [['user-admin','admin','Promise Gatsi','Promise','GATSI',['branch-cbd'],null],['user-mary','staff','Mary Dube','Mary','DUBE',['branch-avondale'],null],['user-tinashe','staff','Tinashe Moyo','Tinashe','MOYO',['branch-murewa'],null],['user-rudo-staff','staff','Rudo Nyathi','RudoStaff','NYATHI',['branch-cbd'],null],['user-customer','customer','Rudo Chikowore','Rudo','CHIKOWORE',['branch-cbd'],'customer-rudo']];
 if (production && (!process.env.INITIAL_ADMIN_USERNAME || !process.env.INITIAL_ADMIN_PASSWORD)) throw new Error('INITIAL_ADMIN_USERNAME and INITIAL_ADMIN_PASSWORD are required in production.');
 const credentials = production ? [['user-admin','admin','Promise Gatsi',process.env.INITIAL_ADMIN_USERNAME,process.env.INITIAL_ADMIN_PASSWORD,['branch-cbd'],null]] : developmentCredentials;
-const emptyState = { version: 1, activeUserId: null, activeBranchId: 'branch-cbd', branches: [{ id:'branch-cbd',name:'Harare CBD Branch',shortName:'Harare CBD',address:'12 Jason Moyo Avenue, Harare',phone:'+263 77 410 2201',managerId:'user-admin',active:true },{ id:'branch-avondale',name:'Avondale Branch',shortName:'Avondale',address:'8 King George Road, Avondale',phone:'+263 77 410 2202',managerId:'user-mary',active:true },{ id:'branch-murewa',name:'Murewa Branch',shortName:'Murewa',address:'Stand 41, Murewa Centre',phone:'+263 77 410 2203',managerId:'user-tinashe',active:true }], users: [], customers: [{ id:'customer-rudo',name:'Rudo Chikowore',phone:'+263 77 555 0199',email:'rudo@example.com',address:'32 Fife Avenue, Harare',joinedAt:new Date().toISOString(),branchId:'branch-cbd',loyaltyPoints:185 }], services: [], orders: [], payments: [], pickupRequests: [], inventory: [], activities: [], notifications: [] };
+const emptyState = { version: 1, activeUserId: null, activeBranchId: 'branch-cbd', branches: [{ id:'branch-cbd',name:'Harare CBD Branch',shortName:'Harare CBD',address:'12 Jason Moyo Avenue, Harare',phone:'+263 77 410 2201',managerId:'user-admin',active:true },{ id:'branch-avondale',name:'Avondale Branch',shortName:'Avondale',address:'8 King George Road, Avondale',phone:'+263 77 410 2202',managerId:'user-mary',active:true },{ id:'branch-murewa',name:'Murewa Branch',shortName:'Murewa',address:'Stand 41, Murewa Centre',phone:'+263 77 410 2203',managerId:'user-tinashe',active:true }], users: [], customers: [{ id:'customer-rudo',name:'Rudo Chikowore',phone:'+263 77 555 0199',email:'rudo@example.com',address:'32 Fife Avenue, Harare',joinedAt:new Date().toISOString(),branchId:'branch-cbd',loyaltyPoints:185 }], services: [], orders: [], payments: [], pickupRequests: [], inventory: [], clothingItems: [], clothingSales: [], activities: [], notifications: [] };
 
 const nowPlus = (amount, unit) => new Date(Date.now() + amount * unit); const ipOf = (req) => String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
 const response = (res,status,body,origin) => { res.writeHead(status,{ 'content-type':'application/json; charset=utf-8','access-control-allow-origin':origin || '','access-control-allow-headers':'authorization,content-type','access-control-allow-methods':'GET,POST,OPTIONS',vary:'Origin','x-content-type-options':'nosniff','referrer-policy':'no-referrer','cache-control':'no-store' }); res.end(JSON.stringify(body)); };
@@ -20,7 +21,7 @@ const reportError = async (error, req) => { console.error(JSON.stringify({ level
 async function migrate() { await query('CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())'); const { readdir, readFile } = await import('node:fs/promises'); const { dirname, resolve } = await import('node:path'); const { fileURLToPath } = await import('node:url'); const dir=resolve(dirname(fileURLToPath(import.meta.url)),'../migrations'); const applied=new Set((await query('SELECT version FROM schema_migrations')).rows.map(r=>r.version)); for(const file of (await readdir(dir)).filter(f=>f.endsWith('.sql')).sort()){if(applied.has(file))continue;const sql=await readFile(resolve(dir,file),'utf8');await transaction(async c=>{await c.query(sql);await c.query('INSERT INTO schema_migrations(version) VALUES($1)',[file]);});} }
 async function seed() { await transaction(async c => { await c.query("INSERT INTO app_state(singleton,payload) VALUES(true,$1) ON CONFLICT(singleton) DO NOTHING",[JSON.stringify(emptyState)]); for(const [id,role,name,username,password,branchIds,customerId] of credentials){const profile={id,role,name,username,branchIds,customerId,email:'',phone:'',avatarColor:'#008D4C',verified:true,active:true};await c.query('INSERT INTO users(id,username,username_normalized,password_hash,role,verified_at,active,profile) VALUES($1,$2,$3,$4,$5,now(),true,$6) ON CONFLICT(id) DO NOTHING',[id,username,username.toLowerCase(),passwordHash(password),role,JSON.stringify(profile)]);} const state=(await c.query('SELECT payload FROM app_state WHERE singleton=true')).rows[0].payload;if(!state.users?.length){state.users=credentials.map(([id,role,name,username,,branchIds,customerId])=>({id,role,name,username,branchIds,customerId,email:'',phone:'',avatarColor:'#008D4C',verified:true,active:true}));await c.query('UPDATE app_state SET payload=$1,updated_at=now() WHERE singleton=true',[JSON.stringify(state)]);} }); }
 const normalizeNotifications = (value) => Array.isArray(value)?value.filter(item=>item&&typeof item==='object'&&typeof item.id==='string'&&typeof item.title==='string'&&typeof item.message==='string'&&typeof item.at==='string').map(item=>({...item,recipientUserIds:Array.isArray(item.recipientUserIds)?item.recipientUserIds.filter(id=>typeof id==='string'):[],readByUserIds:Array.isArray(item.readByUserIds)?item.readByUserIds.filter(id=>typeof id==='string'):[]})).slice(0,500):[];
-const normalizeState = (state) => ({...state,notifications:normalizeNotifications(state?.notifications)});
+const normalizeState = (state) => ({...state,notifications:normalizeNotifications(state?.notifications),clothingItems:Array.isArray(state?.clothingItems)?state.clothingItems:[],clothingSales:Array.isArray(state?.clothingSales)?state.clothingSales:[]});
 const loadState = async (client=pool) => normalizeState((await client.query('SELECT payload FROM app_state WHERE singleton=true')).rows[0].payload);
 const publicUsers = (state) => ({...state,users:state.users.map(({password,passwordHash,...u})=>u)});
 const scoped = (state,user) => {
@@ -35,7 +36,7 @@ const scoped = (state,user) => {
   });
   const notifications=user.role==='admin'?state.notifications:state.notifications.filter(item=>notificationRelatesToUser(state,item,user)).map(item=>({...item,recipientUserIds:(item.recipientUserIds||[]).includes(user.id)?[user.id]:[],readByUserIds:(item.readByUserIds||[]).includes(user.id)?[user.id]:[]}));
   const visibleBranchIds=user.role==='customer'?new Set([...branchIds,...orders.map(order=>order.branchId),...state.pickupRequests.filter(item=>item.customerId===user.profile.customerId).map(item=>item.branchId)]):new Set(branchIds);
-  return publicUsers({...state,activeUserId:user.id,activeBranchId:user.role==='admin'?'all':branchIds[0],branches:state.branches.filter(b=>visibleBranchIds.has(b.id)),users,customers:user.role==='customer'?state.customers.filter(c=>c.id===user.profile.customerId):state.customers.filter(c=>branchIds.includes(c.branchId)),orders,payments:state.payments.filter(p=>ids.has(p.orderId)),pickupRequests:user.role==='customer'?state.pickupRequests.filter(p=>p.customerId===user.profile.customerId):state.pickupRequests.filter(p=>branchIds.includes(p.branchId)),inventory:user.role==='customer'?[]:state.inventory.filter(i=>branchIds.includes(i.branchId)),activities:user.role==='customer'?[]:state.activities.filter(a=>branchIds.includes(a.branchId)),notifications});
+  return publicUsers({...state,activeUserId:user.id,activeBranchId:user.role==='admin'?'all':branchIds[0],branches:state.branches.filter(b=>visibleBranchIds.has(b.id)),users,customers:user.role==='customer'?state.customers.filter(c=>c.id===user.profile.customerId):state.customers.filter(c=>branchIds.includes(c.branchId)),orders,payments:state.payments.filter(p=>ids.has(p.orderId)),pickupRequests:user.role==='customer'?state.pickupRequests.filter(p=>p.customerId===user.profile.customerId):state.pickupRequests.filter(p=>branchIds.includes(p.branchId)),inventory:user.role==='customer'?[]:state.inventory.filter(i=>branchIds.includes(i.branchId)),clothingItems:user.role==='customer'?[]:state.clothingItems.filter(i=>branchIds.includes(i.branchId)),clothingSales:user.role==='customer'?[]:state.clothingSales.filter(s=>branchIds.includes(s.branchId)),activities:user.role==='customer'?[]:state.activities.filter(a=>branchIds.includes(a.branchId)),notifications});
 };
 const canBranch=(user,id)=>user.role==='admin'||(user.profile.branchIds||[]).includes(id);
 const activity=(branchId,userId,message,kind)=>({id:`activity-${randomUUID()}`,branchId,userId,message,kind,at:new Date().toISOString()});
@@ -46,6 +47,7 @@ const addNotification=(state,item)=>{state.notifications=[item,...state.notifica
 const fail=(message,status=422)=>Object.assign(new Error(message),{status});
 const requireAdmin=(user)=>{if(user.role!=='admin')throw fail('Administrator access required.',403);};
 const textValue=(value,max=200)=>String(value??'').trim().slice(0,max);
+const secureEqual=(left,right)=>{const a=Buffer.from(String(left??'')),b=Buffer.from(String(right??''));return a.length===b.length&&timingSafeEqual(a,b);};
 const staffUsername=/^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$/;
 const validStaffBranches=(state,value)=>{
   if(!Array.isArray(value))throw fail('At least one active branch is required.');
@@ -69,6 +71,35 @@ async function mutate(user,action,req){return transaction(async c=>{
     const profile={...action.user,password:undefined,verified:false,active:true};
     await c.query('INSERT INTO users(id,username,username_normalized,password_hash,role,email,phone,active,profile) VALUES($1,$2,$3,$4,$5,$6,$7,true,$8)',[profile.id,profile.username,normalized,passwordHash(action.user.password),profile.role,profile.email,profile.phone,JSON.stringify(profile)]);
     state.customers.unshift(action.customer);state.users.unshift(profile);await issueOneTime(c,profile.id,'account_verification',profile.email,profile.phone,req);
+  }
+  else if(action.type==='CREATE_BRANCH'){
+    requireAdmin(user);
+    const incoming=action.branch||{},id=textValue(incoming.id,128),name=textValue(incoming.name,160),shortName=textValue(incoming.shortName,80);
+    const address=textValue(incoming.address,300),phone=textValue(incoming.phone,64),managerId=textValue(incoming.managerId,128);
+    if(!id||!name||!shortName||!address||!phone||!managerId)throw fail('Complete every branch field.');
+    if(incoming.active!==true)throw fail('A new branch must start open.');
+    if(state.branches.some(item=>item.id===id))throw fail('Branch ID already exists.',409);
+    if(state.branches.some(item=>item.name.toLowerCase()===name.toLowerCase()||item.shortName.toLowerCase()===shortName.toLowerCase()))throw fail('Branch name and short name must be unique.',409);
+    const stateManager=state.users.find(item=>item.id===managerId&&item.role==='admin'&&item.active!==false&&item.verified===true);
+    const manager=(await c.query("SELECT id FROM users WHERE id=$1 AND role='admin' AND active=true AND verified_at IS NOT NULL",[managerId])).rows[0];
+    if(!stateManager||!manager)throw fail('Choose an active verified administrator as the initial branch manager.');
+    const branch={id,name,shortName,address,phone,managerId,active:true};
+    state.branches.unshift(branch);
+    auditMetadata={name,shortName,managerId};auditEntityType='branch';auditEntityId=id;
+  }
+  else if(action.type==='CREATE_SERVICE'){
+    requireAdmin(user);
+    const incoming=action.service||{},id=textValue(incoming.id,128),name=textValue(incoming.name,160),description=textValue(incoming.description,1000);
+    const categories=new Set(['laundry','dry_cleaning','textile','speciality']),units=new Set(['item','kg','pair','set','metre']);
+    const price=incoming.price,turnaroundHours=incoming.turnaroundHours;
+    if(!id||!name||!description||!categories.has(incoming.category)||!units.has(incoming.unit))throw fail('Complete every service field.');
+    if(incoming.active!==true)throw fail('A new service must start active.');
+    if(typeof price!=='number'||!Number.isFinite(price)||price<0||price>1000000)throw fail('Service price is invalid.');
+    if(typeof turnaroundHours!=='number'||!Number.isInteger(turnaroundHours)||turnaroundHours<1||turnaroundHours>8760)throw fail('Turnaround must be between 1 and 8,760 hours.');
+    if(state.services.some(item=>item.id===id))throw fail('Service ID already exists.',409);
+    if(state.services.some(item=>item.name.toLowerCase()===name.toLowerCase()))throw fail('Service name already exists.',409);
+    state.services.unshift({id,name,category:incoming.category,unit:incoming.unit,price,turnaroundHours,description,active:true});
+    auditMetadata={name,category:incoming.category,unit:incoming.unit,price};auditEntityType='service';auditEntityId=id;
   }
   else if(action.type==='UPDATE_BRANCH'){
     requireAdmin(user);
@@ -147,6 +178,24 @@ async function mutate(user,action,req){return transaction(async c=>{
       setStateUser(state,profile);
     }
     auditMetadata={before,after:{name,email,phone,branchId,loyaltyPoints,measurementsUpdated:incoming.measurements!==undefined}};auditEntityType='customer';auditEntityId=customerId;
+  }
+  else if(action.type==='UPDATE_PROFILE'){
+    const incoming=action.updates||{};
+    const name=textValue(incoming.name,200),email=textValue(incoming.email,254),phone=textValue(incoming.phone,64),jobTitle=textValue(incoming.jobTitle,120);
+    if(!name||!phone)throw fail('Name and phone are required.');
+    if(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw fail('Email address is invalid.');
+    const target=(await c.query('SELECT id,role,username,username_normalized,profile FROM users WHERE id=$1 FOR UPDATE',[user.id])).rows[0];
+    if(!target)throw fail('Your account was not found.',404);
+    const username=textValue(incoming.username??target.username,64),normalizedUsername=username.toLowerCase();
+    if(target.role!=='admin'&&username!==target.username)throw fail('Only administrators can change their login username.',403);
+    if(target.role==='admin'&&!staffUsername.test(username))throw fail('Username must be 3 to 64 characters and use only letters, numbers, dots, underscores or hyphens.');
+    if((await c.query('SELECT 1 FROM users WHERE username_normalized=$1 AND id<>$2',[normalizedUsername,user.id])).rowCount)throw fail('Username already exists.',409);
+    const before={name:target.profile?.name,email:target.profile?.email,phone:target.profile?.phone,jobTitle:target.profile?.jobTitle,username:target.username};
+    const profile={...target.profile,name,email,phone,username,...(target.role==='staff'||target.role==='admin'?{jobTitle}: {})};
+    await c.query('UPDATE users SET username=$2,username_normalized=$3,email=$4,phone=$5,profile=$6,updated_at=now() WHERE id=$1',[user.id,username,normalizedUsername,email,phone,JSON.stringify(profile)]);
+    setStateUser(state,{...state.users.find(item=>item.id===user.id),...profile,id:user.id,role:target.role});
+    if(target.role==='customer'&&profile.customerId){const customer=state.customers.find(item=>item.id===profile.customerId);if(customer){customer.name=name;customer.email=email;customer.phone=phone;}}
+    auditMetadata={before,after:{name,email,phone,jobTitle,username}};auditEntityType='user';auditEntityId=user.id;
   }
   else if(action.type==='CREATE_STAFF'){
     requireAdmin(user);
@@ -285,6 +334,64 @@ async function mutate(user,action,req){return transaction(async c=>{
   else if(action.type==='CREATE_PICKUP'){if((user.role==='customer'&&action.request?.customerId!==user.profile.customerId)||!canBranch(user,action.request?.branchId)||!state.branches.some(item=>item.id===action.request?.branchId&&item.active))throw fail('Not authorized.',403);state.pickupRequests.unshift(action.request);}
   else if(action.type==='UPDATE_PICKUP'){const p=state.pickupRequests.find(x=>x.id===action.requestId);if(!p||user.role==='customer'||!canBranch(user,p.branchId)||!state.branches.some(item=>item.id===p.branchId&&item.active))throw fail('Not authorized.',403);p.status=action.status;}
   else if(action.type==='ADJUST_INVENTORY'){const i=state.inventory.find(x=>x.id===action.itemId);if(!i||user.role==='customer'||!canBranch(user,i.branchId)||!state.branches.some(item=>item.id===i.branchId&&item.active))throw fail('Not authorized.',403);i.quantity=Math.max(0,i.quantity+Number(action.delta));}
+  else if(action.type==='CREATE_CLOTHING_ITEM'){
+    requireAdmin(user);
+    const incoming=action.item||{},id=textValue(incoming.id,128),branchId=textValue(incoming.branchId,128),name=textValue(incoming.name,180),sku=textValue(incoming.sku,64);
+    const category=textValue(incoming.category,80),size=textValue(incoming.size,40),color=textValue(incoming.color,80);
+    const price=incoming.price,quantity=incoming.quantity,reorderLevel=incoming.reorderLevel;
+    if(!id||!name||!sku||!category)throw fail('Item ID, name, SKU and category are required.');
+    if(!/^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$/.test(sku))throw fail('SKU must be 2 to 64 characters and use only letters, numbers, dots, underscores or hyphens.');
+    if(!state.branches.some(item=>item.id===branchId&&item.active))throw fail('Choose an open branch.');
+    if(typeof price!=='number'||!Number.isFinite(price)||price<0||price>1000000)throw fail('Selling price is invalid.');
+    if(!Number.isInteger(quantity)||quantity<0||quantity>1000000000)throw fail('Opening quantity must be a non-negative whole number.');
+    if(!Number.isInteger(reorderLevel)||reorderLevel<0||reorderLevel>1000000000)throw fail('Reorder level must be a non-negative whole number.');
+    if(state.clothingItems.some(item=>item.id===id))throw fail('Clothing item ID already exists.',409);
+    if(state.clothingItems.some(item=>item.sku.toLowerCase()===sku.toLowerCase()))throw fail('SKU already exists.',409);
+    state.clothingItems.unshift({id,branchId,name,sku,category,size,color,price,quantity,reorderLevel,active:true});
+    auditMetadata={branchId,name,sku,quantity,price};auditEntityType='clothing_item';auditEntityId=id;
+  }
+  else if(action.type==='UPDATE_CLOTHING_ITEM'){
+    requireAdmin(user);
+    const itemId=textValue(action.itemId,128),incoming=action.updates||{},target=state.clothingItems.find(item=>item.id===itemId);
+    if(!target)throw fail('Clothing item was not found.',404);
+    const branchId=textValue(incoming.branchId,128),name=textValue(incoming.name,180),sku=textValue(incoming.sku,64);
+    const category=textValue(incoming.category,80),size=textValue(incoming.size,40),color=textValue(incoming.color,80),price=incoming.price,reorderLevel=incoming.reorderLevel;
+    if(!name||!sku||!category||typeof incoming.active!=='boolean')throw fail('Name, SKU, category and status are required.');
+    if(!/^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$/.test(sku))throw fail('SKU must be 2 to 64 characters and use only letters, numbers, dots, underscores or hyphens.');
+    if(!state.branches.some(item=>item.id===branchId&&item.active))throw fail('Choose an open branch.');
+    if(typeof price!=='number'||!Number.isFinite(price)||price<0||price>1000000)throw fail('Selling price is invalid.');
+    if(!Number.isInteger(reorderLevel)||reorderLevel<0||reorderLevel>1000000000)throw fail('Reorder level must be a non-negative whole number.');
+    if(state.clothingItems.some(item=>item.id!==itemId&&item.sku.toLowerCase()===sku.toLowerCase()))throw fail('SKU already exists.',409);
+    const before={branchId:target.branchId,name:target.name,sku:target.sku,price:target.price,reorderLevel:target.reorderLevel,active:target.active};
+    Object.assign(target,{branchId,name,sku,category,size,color,price,reorderLevel,active:incoming.active});
+    auditMetadata={before,after:{branchId,name,sku,price,reorderLevel,active:incoming.active}};auditEntityType='clothing_item';auditEntityId=itemId;
+  }
+  else if(action.type==='ADJUST_CLOTHING_STOCK'){
+    requireAdmin(user);
+    const itemId=textValue(action.itemId,128),delta=action.delta,target=state.clothingItems.find(item=>item.id===itemId);
+    if(!target)throw fail('Clothing item was not found.',404);
+    if(!state.branches.some(item=>item.id===target.branchId&&item.active))throw fail('Stock cannot be changed for a closed branch.',409);
+    if(!Number.isInteger(delta)||delta===0||Math.abs(delta)>1000000000)throw fail('Stock adjustment must be a non-zero whole number.');
+    if(target.quantity+delta<0)throw fail('Stock cannot fall below zero.',409);
+    const before=target.quantity;target.quantity+=delta;
+    state.activities.unshift(activity(target.branchId,user.id,`adjusted ${target.name} stock by ${delta>0?'+':''}${delta}`,'inventory'));
+    auditMetadata={before,delta,after:target.quantity};auditEntityType='clothing_item';auditEntityId=itemId;
+  }
+  else if(action.type==='RECORD_CLOTHING_SALE'){
+    if(user.role==='customer')throw fail('Not authorized.',403);
+    const incoming=action.sale||{},id=textValue(incoming.id,128),itemId=textValue(incoming.itemId,128),quantity=incoming.quantity;
+    const target=state.clothingItems.find(item=>item.id===itemId);
+    if(!id||!target)throw fail('Choose a valid clothing item.');
+    if(state.clothingSales.some(sale=>sale.id===id))throw fail('Sale ID already exists.',409);
+    if(!target.active||!state.branches.some(item=>item.id===target.branchId&&item.active)||!canBranch(user,target.branchId))throw fail('Not authorized for this item.',403);
+    if(!Number.isInteger(quantity)||quantity<1)throw fail('Sale quantity must be a positive whole number.');
+    if(quantity>target.quantity)throw fail(`Only ${target.quantity} unit${target.quantity===1?' is':'s are'} available.`,409);
+    const unitPrice=target.price,total=Number((unitPrice*quantity).toFixed(2)),soldAt=new Date().toISOString();
+    const sale={id,itemId,branchId:target.branchId,quantity,unitPrice,total,soldAt,soldByUserId:user.id};
+    target.quantity-=quantity;state.clothingSales.unshift(sale);
+    state.activities.unshift(activity(target.branchId,user.id,`sold ${quantity} ${target.name}`,'inventory'));
+    auditMetadata={itemId,quantity,unitPrice,total};auditEntityType='clothing_sale';auditEntityId=id;
+  }
   else if(action.type==='CLOCK_TOGGLE'){const target=state.users.find(x=>x.id===action.userId);if(!target||target.active===false||(user.role!=='admin'&&user.id!==target.id))throw fail('Not authorized.',403);target.clockedIn=!target.clockedIn;if(target.clockedIn)target.lastClockIn=new Date().toISOString();}
   else if(action.type==='MARK_ALL_NOTIFICATIONS_READ'){
     let marked=0;
@@ -316,11 +423,74 @@ if(url.pathname==='/api/auth/password-reset/confirm'&&req.method==='POST'){const
 if(url.pathname==='/api/auth/verification/confirm'&&req.method==='POST'){const b=await bodyOf(req);await transaction(async c=>{const token=(await c.query("SELECT * FROM one_time_tokens WHERE token_hash=ANY($1) AND purpose='account_verification' AND used_at IS NULL AND expires_at>now() FOR UPDATE",[tokenHashes(String(b.token||''))])).rows[0];if(!token)throw Object.assign(new Error('Verification token is invalid or expired.'),{status:400});const account=(await c.query('SELECT profile FROM users WHERE id=$1 FOR UPDATE',[token.user_id])).rows[0];account.profile={...account.profile,verified:true};await c.query('UPDATE users SET verified_at=now(),profile=$2,updated_at=now() WHERE id=$1',[token.user_id,JSON.stringify(account.profile)]);const state=(await c.query('SELECT payload FROM app_state WHERE singleton=true FOR UPDATE')).rows[0].payload;const stateUser=state.users.find(item=>item.id===token.user_id);if(stateUser)stateUser.verified=true;await c.query('UPDATE app_state SET payload=$1,updated_at=now() WHERE singleton=true',[JSON.stringify(state)]);await c.query('UPDATE one_time_tokens SET used_at=now() WHERE id=$1',[token.id]);await audit(c,token.user_id,'account_verification.completed',req);});return response(res,200,{ok:true},origin);}
 const user=await authUser(req);if(!user)throw Object.assign(new Error('Authentication required.'),{status:401});if(url.pathname==='/api/admin/customers/verify'&&req.method==='POST'){if(user.role!=='admin')throw Object.assign(new Error('Administrator access required.'),{status:403});if(process.env.NOTIFICATION_WEBHOOK_URL)throw Object.assign(new Error('This account must use the delivered verification code.'),{status:409});const b=await bodyOf(req);const verified=await transaction(async c=>{const target=(await c.query("SELECT id,profile FROM users WHERE id=$1 AND role='customer' AND active=true FOR UPDATE",[String(b.userId||'')])).rows[0];if(!target)throw Object.assign(new Error('Customer account was not found.'),{status:404});target.profile={...target.profile,verified:true};await c.query('UPDATE users SET verified_at=COALESCE(verified_at,now()),profile=$2,updated_at=now() WHERE id=$1',[target.id,JSON.stringify(target.profile)]);await c.query("UPDATE one_time_tokens SET used_at=COALESCE(used_at,now()) WHERE user_id=$1 AND purpose='account_verification'",[target.id]);const state=(await c.query('SELECT payload FROM app_state WHERE singleton=true FOR UPDATE')).rows[0].payload;const stateUser=state.users.find(item=>item.id===target.id);if(stateUser)stateUser.verified=true;await c.query('UPDATE app_state SET payload=$1,updated_at=now() WHERE singleton=true',[JSON.stringify(state)]);await audit(c,user.id,'account_verification.admin_completed',req,{},'user',target.id);return state;});return response(res,200,scoped(verified,user),origin);}if(url.pathname==='/api/auth/logout'&&req.method==='POST'){await transaction(async c=>{const hashes=tokenHashes(req.headers.authorization.replace(/^Bearer\s+/i,''));await c.query('UPDATE auth_sessions SET revoked_at=COALESCE(revoked_at,now()) WHERE access_token_hash=ANY($1)',[hashes]);await audit(c,user.id,'auth.logout',req);});return response(res,200,{ok:true},origin);}if(url.pathname==='/api/state'&&req.method==='GET')return response(res,200,scoped(await loadState(),user),origin);if(url.pathname==='/api/audit'&&req.method==='GET'){if(user.role!=='admin')throw Object.assign(new Error('Administrator access required.'),{status:403});const rows=(await query('SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 500')).rows;return response(res,200,{items:rows},origin);}if(url.pathname==='/api/actions'&&req.method==='POST')return response(res,200,await mutate(user,await bodyOf(req),req),origin);if(url.pathname==='/api/bootstrap'&&req.method==='POST'){if(user.role!=='admin')throw Object.assign(new Error('Administrator access required.'),{status:403});const incoming=await bodyOf(req);const result=await transaction(async c=>{const current=(await c.query('SELECT payload FROM app_state WHERE singleton=true FOR UPDATE')).rows[0].payload;if(current.services.length||current.orders.length)throw Object.assign(new Error('Backend is already initialized.'),{status:409});for(const k of ['branches','customers','services','orders','payments','pickupRequests','inventory','activities'])if(Array.isArray(incoming[k]))current[k]=incoming[k];await c.query('UPDATE app_state SET payload=$1,updated_at=now() WHERE singleton=true',[JSON.stringify(current)]);await audit(c,user.id,'system.bootstrap',req);return current;});return response(res,200,scoped(result,user),origin);}throw Object.assign(new Error('Route not found.'),{status:404});}catch(error){const status=error.status||422;if(status>=500)await reportError(error,req);else console.warn(JSON.stringify({level:'warning',message:error.message,path:req.url,status,time:new Date().toISOString()}));return response(res,status,{error:error.message||'Request failed.'},origin);}};
 
-export default handler;
+const routedHandler=async(req,res)=>{
+  const url=new URL(req.url,`http://${req.headers.host}`);
+  const intercepted=url.pathname==='/api/cron/daily-operations'
+    || url.pathname==='/api/account/password'
+    || url.pathname==='/api/admin/operations-summaries'
+    || url.pathname==='/api/admin/operations-summaries/generate';
+  if(!intercepted||req.method==='OPTIONS')return handler(req,res);
+  const origin=origins.has(req.headers.origin)?req.headers.origin:'';
+  try{
+    await initialize();
+    if(url.pathname==='/api/cron/daily-operations'&&req.method==='GET'){
+      if(!process.env.CRON_SECRET)throw Object.assign(new Error('Daily summary scheduler is not configured.'),{status:503});
+      if(!secureEqual(req.headers.authorization,`Bearer ${process.env.CRON_SECRET}`))throw Object.assign(new Error('Scheduler authorization failed.'),{status:401});
+      const generated=await transaction(async c=>{
+        const result=await generateAndStoreDailyOperationsSummary(c,previousHarareDateKey());
+        await audit(c,null,'operations_summary.scheduled',req,{date:result.summary.date,created:result.created},'operations_summary',result.summary.id);
+        return result;
+      });
+      return response(res,200,{ok:true,...generated},origin);
+    }
+
+    const user=await authUser(req);
+    if(!user)throw Object.assign(new Error('Authentication required.'),{status:401});
+
+    if(url.pathname==='/api/account/password'&&req.method==='POST'){
+      const body=await bodyOf(req),currentPassword=String(body.currentPassword??''),newPassword=String(body.newPassword??'');
+      if(!passwordAcceptable(newPassword))throw fail('Password must be at least 10 characters and include upper, lower and numeric characters.');
+      await transaction(async c=>{
+        const target=(await c.query('SELECT password_hash FROM users WHERE id=$1 FOR UPDATE',[user.id])).rows[0];
+        if(!target||!passwordValid(currentPassword,target.password_hash))throw Object.assign(new Error('Current password is incorrect.'),{status:400});
+        if(passwordValid(newPassword,target.password_hash))throw fail('Choose a password you have not already been using.');
+        await c.query('UPDATE users SET password_hash=$2,updated_at=now() WHERE id=$1',[user.id,passwordHash(newPassword)]);
+        const currentHashes=tokenHashes(req.headers.authorization.replace(/^Bearer\s+/i,''));
+        await c.query('UPDATE auth_sessions SET revoked_at=COALESCE(revoked_at,now()) WHERE user_id=$1 AND NOT (access_token_hash=ANY($2))',[user.id,currentHashes]);
+        await audit(c,user.id,'account.password_changed',req,{},'user',user.id);
+      });
+      return response(res,200,{ok:true},origin);
+    }
+
+    requireAdmin(user);
+    if(url.pathname==='/api/admin/operations-summaries'&&req.method==='GET'){
+      const items=await listDailyOperationsSummaries(pool,url.searchParams.get('limit')??31);
+      return response(res,200,{items},origin);
+    }
+    if(url.pathname==='/api/admin/operations-summaries/generate'&&req.method==='POST'){
+      const body=await bodyOf(req),date=body.date??previousHarareDateKey();
+      if(!validSummaryDate(date))throw fail('Summary date must use YYYY-MM-DD.');
+      if(date>previousHarareDateKey())throw fail('Only completed Africa/Harare business days can be summarized.');
+      const generated=await transaction(async c=>{
+        const result=await generateAndStoreDailyOperationsSummary(c,date,{replace:true});
+        await audit(c,user.id,'operations_summary.generated',req,{date,created:result.created,replaced:result.replaced},'operations_summary',result.summary.id);
+        return result;
+      });
+      return response(res,200,generated,origin);
+    }
+    throw Object.assign(new Error('Route not found.'),{status:404});
+  }catch(error){
+    const status=error.status||422;
+    if(status>=500)await reportError(error,req);else console.warn(JSON.stringify({level:'warning',message:error.message,path:req.url,status,time:new Date().toISOString()}));
+    return response(res,status,{error:error.message||'Request failed.'},origin);
+  }
+};
+
+export default routedHandler;
 
 if (!process.env.VERCEL) {
   await initialize();
-  const server=createServer(handler);
+  const server=createServer(routedHandler);
   server.listen(port,host,()=>console.log(JSON.stringify({level:'info',message:`Gatsi API listening on ${host}:${port}`,environment:process.env.APP_ENV||'development'})));
   const shutdown=async()=>{server.close();await pool.end();process.exit(0);};process.on('SIGTERM',shutdown);process.on('SIGINT',shutdown);process.on('unhandledRejection',(error)=>void reportError(error));process.on('uncaughtException',(error)=>void reportError(error).finally(()=>process.exit(1)));
 }

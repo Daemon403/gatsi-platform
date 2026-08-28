@@ -74,6 +74,8 @@ export type Customer = {
 
 export type CustomerUpdate = Pick<Customer, 'name' | 'phone' | 'email' | 'address' | 'branchId' | 'loyaltyPoints' | 'measurements'>;
 
+export type ProfileUpdate = Pick<User, 'name' | 'email' | 'phone' | 'jobTitle' | 'username'>;
+
 export type Service = {
   id: string;
   name: string;
@@ -155,6 +157,33 @@ export type InventoryItem = {
   unitCost: number;
 };
 
+export type ClothingItem = {
+  id: string;
+  branchId: string;
+  name: string;
+  sku: string;
+  category: string;
+  size: string;
+  color: string;
+  price: number;
+  quantity: number;
+  reorderLevel: number;
+  active: boolean;
+};
+
+export type ClothingItemUpdate = Pick<ClothingItem, 'branchId' | 'name' | 'sku' | 'category' | 'size' | 'color' | 'price' | 'reorderLevel' | 'active'>;
+
+export type ClothingSale = {
+  id: string;
+  itemId: string;
+  branchId: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+  soldAt: string;
+  soldByUserId: string;
+};
+
 export type Activity = {
   id: string;
   branchId: string;
@@ -192,6 +221,9 @@ export type OperationsMetrics = {
   activeStaff: number;
   lowStockItems: number;
   operationalEvents: number;
+  clothingSales: number;
+  clothingUnitsSold: number;
+  clothingRevenue: number;
 };
 
 export type BranchOperationsSummary = OperationsMetrics & {
@@ -222,6 +254,8 @@ export type AppState = {
   payments: Payment[];
   pickupRequests: PickupRequest[];
   inventory: InventoryItem[];
+  clothingItems: ClothingItem[];
+  clothingSales: ClothingSale[];
   activities: Activity[];
   notifications: AppNotification[];
 };
@@ -237,6 +271,10 @@ export type AppAction =
   | { type: 'CREATE_PICKUP'; request: PickupRequest }
   | { type: 'UPDATE_PICKUP'; requestId: string; status: PickupRequest['status']; userId: string }
   | { type: 'ADJUST_INVENTORY'; itemId: string; delta: number; userId: string }
+  | { type: 'CREATE_CLOTHING_ITEM'; item: ClothingItem }
+  | { type: 'UPDATE_CLOTHING_ITEM'; itemId: string; updates: ClothingItemUpdate }
+  | { type: 'ADJUST_CLOTHING_STOCK'; itemId: string; delta: number; userId: string }
+  | { type: 'RECORD_CLOTHING_SALE'; sale: ClothingSale }
   | { type: 'CLOCK_TOGGLE'; userId: string }
   | { type: 'CREATE_CUSTOMER'; customer: Customer; user: User }
   | { type: 'CREATE_BRANCH'; branch: Branch }
@@ -244,6 +282,7 @@ export type AppAction =
   | { type: 'UPDATE_BRANCH'; branchId: string; updates: BranchUpdate }
   | { type: 'UPDATE_SERVICE'; serviceId: string; updates: ServiceUpdate }
   | { type: 'UPDATE_CUSTOMER'; customerId: string; updates: CustomerUpdate }
+  | { type: 'UPDATE_PROFILE'; updates: ProfileUpdate }
   | { type: 'CREATE_STAFF'; user: User }
   | { type: 'ARCHIVE_STAFF'; userId: string }
   | { type: 'RESTORE_STAFF'; userId: string; branchIds?: string[]; password?: string }

@@ -5,7 +5,7 @@ A multi-branch textile and dry-cleaning operations platform containing:
 - `apps/mobile` - Expo React Native app for iOS and Android
 - `apps/web` - Vite + React responsive web portal
 - `apps/api` - shared authenticated REST API
-- `packages/domain` - shared order, pricing, branch, payment and permission logic
+- `packages/domain` - shared order, pricing, branch, payment, retail stock and permission logic
 
 ## Platform versions
 
@@ -29,6 +29,8 @@ Expo SDK 57 uses React Native's New Architecture and Android edge-to-edge behavi
 These credentials are for local development. Production credentials live in protected deployment settings and are not committed to Git.
 
 PostgreSQL is the system of record. Web and mobile retain a local resilience cache while authenticated mutations synchronize through the API.
+
+Administrators can maintain branches, services, staff, customers, their own login username and profile, and saleable clothing stock. Clothing sales reduce stock atomically and remain in sales history. Daily operations summaries are stored separately from role-scoped app state and include branch, order, payment, pickup, staffing, supply and clothing-sales metrics.
 
 ## Included branches
 
@@ -67,10 +69,14 @@ Important endpoints include:
 - `GET /api/health`
 - `POST /api/auth/login`, `/api/auth/refresh` and `/api/auth/logout`
 - `POST /api/auth/password-reset/request` and `/api/auth/password-reset/confirm`
+- `POST /api/account/password`
 - `POST /api/auth/verification/confirm`
 - `GET /api/state`
 - `POST /api/actions`
 - `GET /api/audit`
+- `GET /api/admin/operations-summaries`
+- `POST /api/admin/operations-summaries/generate`
+- `GET /api/cron/daily-operations` (secured by `CRON_SECRET`)
 
 ## Deploy web, API and PostgreSQL on Vercel
 
@@ -88,7 +94,11 @@ npx vercel link
 npx vercel deploy --prod
 ```
 
-Required Production and Preview variables are `TOKEN_PEPPER_CURRENT`, `INITIAL_ADMIN_USERNAME`, `INITIAL_ADMIN_PASSWORD`, `APP_ENV`, `DATABASE_SSL`, `DB_POOL_SIZE` and `CORS_ORIGINS`, in addition to the Neon variables injected by Vercel. Keep passwords, peppers and webhook secrets marked sensitive.
+Required Production and Preview variables are `TOKEN_PEPPER_CURRENT`, `CRON_SECRET`, `INITIAL_ADMIN_USERNAME`, `INITIAL_ADMIN_PASSWORD`, `APP_ENV`, `DATABASE_SSL`, `DB_POOL_SIZE` and `CORS_ORIGINS`, in addition to the Neon variables injected by Vercel. Keep passwords, peppers and webhook secrets marked sensitive.
+
+The Vercel build applies versioned migrations in both Preview and Production. Configure `DATABASE_URL_UNPOOLED` for migrations and keep pooled `DATABASE_URL` for runtime requests.
+
+Vercel is the canonical scheduler for daily operations summaries. It calls `GET /api/cron/daily-operations` at 22:05 UTC (00:05 Africa/Harare) and authenticates the request with `CRON_SECRET`. Do not enable a Render cron job or another scheduler against the same database while this Vercel cron is active; use exactly one scheduler per database to avoid duplicate generation attempts.
 
 The production site is [gatsi-platform-web.vercel.app](https://gatsi-platform-web.vercel.app).
 

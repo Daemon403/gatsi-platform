@@ -53,6 +53,8 @@ export const normalizeNotifications = (value: unknown): AppNotification[] => {
 export const migrateAccounts = (state: AppState): AppState => ({
   ...state,
   notifications: normalizeNotifications(state.notifications),
+  clothingItems: Array.isArray(state.clothingItems) ? state.clothingItems : [],
+  clothingSales: Array.isArray(state.clothingSales) ? state.clothingSales : [],
   users: state.users.map((user) => {
     const seeded = seededAccounts[user.id];
     return { ...user, username: user.username ?? seeded?.username, password: user.password ?? seeded?.password, verified: user.verified ?? Boolean(user.username || seeded), active: user.active ?? true };

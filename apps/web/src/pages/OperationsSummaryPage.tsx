@@ -20,6 +20,9 @@ const metrics: Array<{ key: MetricKey; label: string; money?: boolean }> = [
   { key: 'activeStaff', label: 'Active staff' },
   { key: 'lowStockItems', label: 'Low-stock items' },
   { key: 'operationalEvents', label: 'Operational events' },
+  { key: 'clothingSales', label: 'Clothing sales' },
+  { key: 'clothingUnitsSold', label: 'Clothing units sold' },
+  { key: 'clothingRevenue', label: 'Clothing revenue', money: true },
 ];
 
 function errorMessage(error: unknown, fallback: string) {
@@ -47,7 +50,8 @@ function generatedTime(value: string) {
 }
 
 function valueOf(metricsValue: OperationsMetrics, key: MetricKey, asMoney = false) {
-  return asMoney ? money(metricsValue[key]) : metricsValue[key].toLocaleString();
+  const value = Number(metricsValue[key] ?? 0);
+  return asMoney ? money(value) : value.toLocaleString();
 }
 
 export function OperationsSummaryPage() {
@@ -82,7 +86,7 @@ function AdminOperationsSummaryPage() {
     return () => { mounted = false; };
   }, []);
 
-  const generateToday = async () => {
+  const generateLatest = async () => {
     if (generating) return;
     setGenerating(true);
     setError('');
@@ -90,7 +94,7 @@ function AdminOperationsSummaryPage() {
       const { summary } = await apiGenerateOperationsSummary();
       setSummaries((current) => [summary, ...current.filter((item) => item.id !== summary.id)]);
     } catch (nextError) {
-      setError(errorMessage(nextError, 'Today’s operations summary could not be generated.'));
+      setError(errorMessage(nextError, 'The latest completed-day summary could not be generated.'));
     } finally {
       setGenerating(false);
     }
@@ -101,12 +105,12 @@ function AdminOperationsSummaryPage() {
       eyebrow="Daily reporting"
       title="Operations summaries"
       description="Review each day’s order flow, revenue, pickups, staffing and stock health across every branch."
-      actions={<Button disabled={generating} onClick={() => void generateToday()}><RefreshCw className={generating ? 'spinning' : ''} /> {generating ? 'Generating…' : 'Generate today'}</Button>}
+      actions={<Button disabled={generating} onClick={() => void generateLatest()}><RefreshCw className={generating ? 'spinning' : ''} /> {generating ? 'Generating…' : 'Generate latest daily summary'}</Button>}
     />
 
     {error ? <div className="management-error" role="alert">{error}</div> : null}
 
-    {loading ? <Card className="operations-loading"><RefreshCw className="spinning" /><strong>Loading operations summaries</strong><span>Retrieving the latest daily snapshots…</span></Card> : !sortedSummaries.length ? <Card><Empty title="No operations summaries yet" body="Generate today’s summary to create the first permanent daily snapshot." /></Card> : <div className="operations-summary-list">
+    {loading ? <Card className="operations-loading"><RefreshCw className="spinning" /><strong>Loading operations summaries</strong><span>Retrieving the latest daily snapshots…</span></Card> : !sortedSummaries.length ? <Card><Empty title="No operations summaries yet" body="Generate the latest completed-day summary to create the first permanent daily snapshot." /></Card> : <div className="operations-summary-list">
       {sortedSummaries.map((summary) => <SummaryCard key={summary.id} summary={summary} />)}
     </div>}
   </>;

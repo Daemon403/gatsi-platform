@@ -92,7 +92,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
           </section> : null}
         </div>
-        <div className="user-chip"><span style={{ background: user.avatarColor }}>{user.name.split(' ').map((part) => part[0]).join('').slice(0, 2)}</span><div><strong>{user.name}</strong><small>{user.role}</small></div></div>
+        <Link className="user-chip" to="/profile" aria-label="Edit profile"><span style={{ background: user.avatarColor }}>{user.name.split(' ').map((part) => part[0]).join('').slice(0, 2)}</span><div><strong>{user.name}</strong><small>{user.role}</small></div></Link>
       </header>
       <main className="content">{children}</main>
     </div>

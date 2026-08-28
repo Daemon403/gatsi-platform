@@ -36,7 +36,12 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
   switch (action.type) {
     case 'HYDRATE':
       return action.state.version === state.version
-        ? { ...action.state, notifications: normalizeNotifications(action.state.notifications) }
+        ? {
+          ...action.state,
+          notifications: normalizeNotifications(action.state.notifications),
+          clothingItems: Array.isArray(action.state.clothingItems) ? action.state.clothingItems : [],
+          clothingSales: Array.isArray(action.state.clothingSales) ? action.state.clothingSales : [],
+        }
         : state;
     case 'LOGIN': {
       const user = state.users.find((item) => item.id === action.userId);
@@ -116,6 +121,42 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
         activities: [activity(state, { branchId: item.branchId, userId: action.userId, message: `${action.delta > 0 ? 'added' : 'used'} ${Math.abs(action.delta)} ${item.unit} of ${item.name}`, kind: 'inventory' }), ...state.activities],
       };
     }
+    case 'CREATE_CLOTHING_ITEM':
+      return { ...state, clothingItems: [action.item, ...(state.clothingItems ?? [])] };
+    case 'UPDATE_CLOTHING_ITEM':
+      return {
+        ...state,
+        clothingItems: (state.clothingItems ?? []).map((item) => item.id === action.itemId ? { ...item, ...action.updates } : item),
+      };
+    case 'ADJUST_CLOTHING_STOCK': {
+      const item = (state.clothingItems ?? []).find((entry) => entry.id === action.itemId);
+      if (!item || !Number.isInteger(action.delta)) return state;
+      return {
+        ...state,
+        clothingItems: state.clothingItems.map((entry) => entry.id === item.id ? { ...entry, quantity: Math.max(0, entry.quantity + action.delta) } : entry),
+        activities: [activity(state, {
+          branchId: item.branchId,
+          userId: action.userId,
+          message: `adjusted ${item.name} stock by ${action.delta > 0 ? '+' : ''}${action.delta}`,
+          kind: 'inventory',
+        }), ...state.activities],
+      };
+    }
+    case 'RECORD_CLOTHING_SALE': {
+      const item = (state.clothingItems ?? []).find((entry) => entry.id === action.sale.itemId);
+      if (!item || !Number.isInteger(action.sale.quantity) || action.sale.quantity < 1 || action.sale.quantity > item.quantity) return state;
+      return {
+        ...state,
+        clothingItems: state.clothingItems.map((entry) => entry.id === item.id ? { ...entry, quantity: entry.quantity - action.sale.quantity } : entry),
+        clothingSales: [action.sale, ...(state.clothingSales ?? [])],
+        activities: [activity(state, {
+          branchId: item.branchId,
+          userId: action.sale.soldByUserId,
+          message: `sold ${action.sale.quantity} ${item.name}`,
+          kind: 'inventory',
+        }), ...state.activities],
+      };
+    }
     case 'CLOCK_TOGGLE': {
       const user = state.users.find((item) => item.id === action.userId);
       if (!user) return state;
@@ -161,6 +202,17 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
           phone: action.updates.phone,
           branchIds: [action.updates.branchId],
         } : user),
+      };
+    }
+    case 'UPDATE_PROFILE': {
+      const user = state.users.find((item) => item.id === state.activeUserId);
+      if (!user) return state;
+      return {
+        ...state,
+        users: state.users.map((item) => item.id === user.id ? { ...item, ...action.updates } : item),
+        customers: user.role === 'customer' && user.customerId
+          ? state.customers.map((customer) => customer.id === user.customerId ? { ...customer, name: action.updates.name, email: action.updates.email, phone: action.updates.phone } : customer)
+          : state.customers,
       };
     }
     case 'CREATE_STAFF': {

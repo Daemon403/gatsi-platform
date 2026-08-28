@@ -11,6 +11,7 @@ import { OrderDetailPage } from './pages/OrderDetailPage';
 import { OrdersPage } from './pages/OrdersPage';
 import { OperationsSummaryPage } from './pages/OperationsSummaryPage';
 import { PickupPage } from './pages/PickupPage';
+import { ProfilePage } from './pages/ProfilePage';
 import { ReceiptsPage } from './pages/ReceiptsPage';
 import { ServicesPage } from './pages/ServicesPage';
 import { TeamPage } from './pages/TeamPage';
@@ -33,6 +34,7 @@ export function App() {
     <Route path="/operations-summary" element={user.role === 'admin' ? <OperationsSummaryPage /> : <Navigate to="/" />} />
     <Route path="/pickup" element={user.role === 'customer' ? <PickupPage /> : <Navigate to="/" />} />
     <Route path="/receipts" element={user.role === 'customer' ? <ReceiptsPage /> : <Navigate to="/" />} />
+    <Route path="/profile" element={<ProfilePage />} />
     <Route path="*" element={<Navigate to="/" />} />
   </Routes></AppShell>;
 }

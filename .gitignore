@@ -17,6 +17,7 @@ ios/
 .env
 .env.*
 !.env.example
+!apps/api/.env.example
 
 # Test and tooling output
 coverage/
@@ -47,5 +48,4 @@ Desktop.ini
 apps/api/data/*.json
 apps/api/data/*.tmp
 
-.vercel
-.env*
+.vercel/
