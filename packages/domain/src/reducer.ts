@@ -70,6 +70,33 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
         }), ...(state.notifications ?? [])].slice(0, 500),
       };
     }
+    case 'CREATE_CUSTOMER_AND_ORDER': {
+      const username = action.user.username?.trim().toLowerCase();
+      if (
+        action.order.customerId !== action.customer.id
+        || action.order.branchId !== action.customer.branchId
+        || state.customers.some((customer) => customer.id === action.customer.id)
+        || state.users.some((user) => user.id === action.user.id || (username && user.username?.trim().toLowerCase() === username))
+        || state.orders.some((order) => order.id === action.order.id || order.number === action.order.number)
+      ) return state;
+      const { password: _password, ...incomingUser } = action.user;
+      const customerUser = {
+        ...incomingUser,
+        role: 'customer' as const,
+        name: action.customer.name,
+        email: action.customer.email,
+        phone: action.customer.phone,
+        branchIds: [action.customer.branchId],
+        customerId: action.customer.id,
+        verified: false,
+        active: true,
+      };
+      return appReducer({
+        ...state,
+        customers: [action.customer, ...state.customers],
+        users: [customerUser, ...state.users],
+      }, { type: 'CREATE_ORDER', order: { ...action.order, branchId: action.customer.branchId, customerId: action.customer.id } });
+    }
     case 'UPDATE_ORDER_STATUS': {
       const target = state.orders.find((order) => order.id === action.orderId);
       if (!target) return state;

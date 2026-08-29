@@ -59,19 +59,65 @@ const validStaffBranches=(state,value)=>{
   return branchIds;
 };
 const setStateUser=(state,profile)=>{const index=state.users.findIndex(item=>item.id===profile.id);if(index===-1)state.users.unshift(profile);else state.users[index]=profile;};
+const normalizedMeasurements=(value)=>{
+  if(value===undefined||value===null)return undefined;
+  if(!value||typeof value!=='object'||Array.isArray(value)||!['cm','in'].includes(value.unit))throw fail('Measurement unit must be centimetres or inches.');
+  const fields=['height','neck','chest','waist','hips','shoulder','sleeve','inseam'];
+  if(Object.keys(value).some(field=>field!=='unit'&&!fields.includes(field)))throw fail('Customer measurements contain an unsupported field.');
+  const measurements={unit:value.unit};
+  for(const field of fields){
+    if(value[field]===undefined||value[field]===null||value[field]==='')continue;
+    const measurement=value[field];
+    if(typeof measurement!=='number'||!Number.isFinite(measurement)||measurement<=0||measurement>1000)throw fail(`${field[0].toUpperCase()}${field.slice(1)} measurement is invalid.`);
+    measurements[field]=measurement;
+  }
+  return measurements;
+};
+async function createCustomerAccount(client,state,incomingCustomer,incomingUser){
+  const customerInput=incomingCustomer||{},userInput=incomingUser||{};
+  const id=textValue(customerInput.id,128),branchId=textValue(customerInput.branchId,128),name=textValue(customerInput.name,160);
+  const phone=textValue(customerInput.phone,64),email=textValue(customerInput.email,254).toLowerCase(),address=textValue(customerInput.address,300);
+  const userId=textValue(userInput.id,128),username=textValue(userInput.username,64),password=String(userInput.password??'');
+  if(!id||!userId||!branchId||!name||!phone)throw fail('Customer name, phone number, branch and account IDs are required.');
+  if(String(customerInput.name??'').trim().length>160||String(customerInput.phone??'').trim().length>64||String(customerInput.email??'').trim().length>254||String(customerInput.address??'').trim().length>300)throw fail('Customer details are too long.');
+  if(!state.branches.some(item=>item.id===branchId&&item.active))throw fail('Choose an open branch.');
+  if(!username||!password)throw fail('Login details are required.');
+  if(String(userInput.username??'').trim().length>64||password.length>128)throw fail('Customer login details are too long.');
+  if(!/^[+()0-9 .-]+$/.test(phone)||phone.replace(/\D/g,'').length<5)throw fail('Enter a valid customer phone number.');
+  if(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw fail('Enter a valid customer email address.');
+  if(state.customers.some(item=>item.id===id)||state.users.some(item=>item.id===userId))throw fail('Customer or user ID already exists.',409);
+  const normalized=username.toLowerCase();
+  const existing=(await client.query('SELECT id,username_normalized FROM users WHERE id=$1 OR username_normalized=$2',[userId,normalized])).rows[0];
+  if(existing)throw fail(existing.id===userId?'Customer user ID already exists.':'Username already exists.',409);
+  const customer={id,name,phone,email,address,joinedAt:new Date().toISOString(),branchId,loyaltyPoints:0};
+  const measurements=normalizedMeasurements(customerInput.measurements);if(measurements)customer.measurements=measurements;
+  const requestedAvatarColor=textValue(userInput.avatarColor,32),avatarColor=/^#[0-9a-f]{6}$/i.test(requestedAvatarColor)?requestedAvatarColor:'#008D4C';
+  const profile={id:userId,role:'customer',name,email,phone,branchIds:[branchId],customerId:id,avatarColor,username,verified:false,active:true};
+  await client.query('INSERT INTO users(id,username,username_normalized,password_hash,role,email,phone,active,profile) VALUES($1,$2,$3,$4,$5,$6,$7,true,$8)',[profile.id,profile.username,normalized,passwordHash(password),profile.role,profile.email,profile.phone,JSON.stringify(profile)]);
+  state.customers.unshift(customer);state.users.unshift(profile);
+  return {customer,profile};
+}
 
-async function mutate(user,action,req){return transaction(async c=>{
+async function mutate(user,action,req){
+ const pendingDeliveries=[];
+ const result=await transaction(async c=>{
   const state=normalizeState((await c.query('SELECT payload FROM app_state WHERE singleton=true FOR UPDATE')).rows[0].payload);
-  let auditMetadata={};let auditEntityType='action';let auditEntityId=action.type;
+  const requestedActionType=action?.type;
+  let inlineCustomerAccount;
+  let auditMetadata={};let auditEntityType='action';let auditEntityId=requestedActionType;
+  if(requestedActionType==='CREATE_CUSTOMER_AND_ORDER'){
+    if(user.role==='customer')throw fail('Not authorized.',403);
+    const branchId=textValue(action.order?.branchId,128),customerId=textValue(action.customer?.id,128);
+    if(!branchId||!canBranch(user,branchId))throw fail('Choose an active branch you can access.',403);
+    if(action.customer?.branchId!==branchId||action.order?.customerId!==customerId)throw fail('The new customer and order must use the same branch and customer ID.');
+    inlineCustomerAccount=await createCustomerAccount(c,state,action.customer,action.user);
+    action={type:'CREATE_ORDER',order:action.order};
+  }
   if(action.type==='CREATE_CUSTOMER'){
     if(user.role!=='admin'||!canBranch(user,action.customer?.branchId))throw fail('Not authorized.',403);
-    if(!state.branches.some(item=>item.id===action.customer?.branchId&&item.active))throw fail('Choose an open branch.');
-    if(!action.user?.username||!action.user?.password)throw fail('Login details are required.');
-    const normalized=action.user.username.toLowerCase();
-    if((await c.query('SELECT 1 FROM users WHERE username_normalized=$1',[normalized])).rowCount)throw fail('Username already exists.',409);
-    const profile={...action.user,password:undefined,verified:false,active:true};
-    await c.query('INSERT INTO users(id,username,username_normalized,password_hash,role,email,phone,active,profile) VALUES($1,$2,$3,$4,$5,$6,$7,true,$8)',[profile.id,profile.username,normalized,passwordHash(action.user.password),profile.role,profile.email,profile.phone,JSON.stringify(profile)]);
-    state.customers.unshift(action.customer);state.users.unshift(profile);await issueOneTime(c,profile.id,'account_verification',profile.email,profile.phone,req);
+    const created=await createCustomerAccount(c,state,action.customer,action.user);
+    inlineCustomerAccount=created;
+    auditMetadata={branchId:created.customer.branchId,customerUserId:created.profile.id};auditEntityType='customer';auditEntityId=created.customer.id;
   }
   else if(action.type==='CREATE_BRANCH'){
     requireAdmin(user);
@@ -283,12 +329,15 @@ async function mutate(user,action,req){return transaction(async c=>{
     if(state.orders.some(item=>item.id===id||item.number===number))throw fail('Order ID or number already exists.',409);
     if(!Array.isArray(incoming.items)||!incoming.items.length)throw fail('Add at least one service item.');
     if(incoming.items.length>100)throw fail('An order cannot contain more than 100 service items.');
+    const itemIds=new Set();
     const items=incoming.items.map((item,index)=>{
       const service=state.services.find(entry=>entry.id===textValue(item?.serviceId,128)&&entry.active);
       const quantity=item?.quantity,description=textValue(item?.description,500);
       if(!service||!description||typeof quantity!=='number'||!Number.isFinite(quantity)||quantity<=0||quantity>10000)throw fail(`Order item ${index+1} is invalid.`);
       const itemNotes=textValue(item?.notes,1000);
-      return {id:textValue(item?.id,128)||`item-${randomUUID()}`,serviceId:service.id,description,quantity,unitPrice:service.price,...(itemNotes?{notes:itemNotes}:{})};
+      if(String(item?.description??'').trim().length>500||String(item?.notes??'').trim().length>1000)throw fail(`Order item ${index+1} is too long.`);
+      const itemId=textValue(item?.id,128)||`item-${randomUUID()}`;if(itemIds.has(itemId))throw fail(`Order item ${index+1} has a duplicate ID.`,409);itemIds.add(itemId);
+      return {id:itemId,serviceId:service.id,description,quantity,unitPrice:service.price,...(itemNotes?{notes:itemNotes}:{})};
     });
     const actor=state.users.find(item=>item.id===user.id&&item.active!==false);
     if(!actor)throw fail('The signed-in account is inactive.',403);
@@ -315,7 +364,7 @@ async function mutate(user,action,req){return transaction(async c=>{
     const order={id,number,branchId,customerId,...(assignedStaffId?{assignedStaffId}:{}),items,status:'received',priority:incoming.priority==='urgent'?'urgent':'normal',intakeMethod,createdAt,dueAt:new Date(dueTime).toISOString(),notes:textValue(incoming.notes,2000),discount,deliveryFee,events:[{id:`event-${randomUUID()}`,status:'received',at:createdAt,byUserId:user.id}]};
     state.orders.unshift(order);state.activities.unshift(activity(branchId,user.id,`created ${number}`,'order'));
     addNotification(state,orderNotification(state,order,user.id,assignedStaffId?'New assigned job':'New job intake',assigneeName?`${number} was assigned to ${assigneeName}.`:`${number} was received and is awaiting assignment.`));
-    auditMetadata={branchId,customerId,assignedStaffId:assignedStaffId||null};auditEntityType='order';auditEntityId=id;
+    auditMetadata={branchId,customerId,assignedStaffId:assignedStaffId||null,orderNumber:number,itemCount:items.length,...(requestedActionType==='CREATE_CUSTOMER_AND_ORDER'?{customerCreated:true,customerUserId:inlineCustomerAccount.profile.id}:{})};auditEntityType='order';auditEntityId=id;
   }
   else if(action.type==='UPDATE_ORDER_STATUS'){
     const o=state.orders.find(x=>x.id===action.orderId);
@@ -404,16 +453,20 @@ async function mutate(user,action,req){return transaction(async c=>{
     auditMetadata={marked};auditEntityType='notification';auditEntityId='all';
   }
   else throw fail('Unsupported action.');
+  if(inlineCustomerAccount)await issueOneTime(c,inlineCustomerAccount.profile.id,'account_verification',inlineCustomerAccount.profile.email,inlineCustomerAccount.profile.phone,req,pendingDeliveries);
   await c.query('UPDATE app_state SET payload=$1,updated_at=now() WHERE singleton=true',[JSON.stringify(state)]);
-  await audit(c,user.id,`action.${action.type.toLowerCase()}`,req,auditMetadata,auditEntityType,auditEntityId);
+  await audit(c,user.id,`action.${String(requestedActionType).toLowerCase()}`,req,auditMetadata,auditEntityType,auditEntityId);
   return scoped(state,user);
-});}
+ });
+ await Promise.all(pendingDeliveries.map(pending=>deliver(pending.id,pending.channel,pending.destination,pending.template,pending.payload)));
+ return result;
+}
 
 async function rateCheck(client,key){const hash=tokenHash(key);const row=(await client.query('SELECT * FROM login_limits WHERE key_hash=$1',[hash])).rows[0];if(row?.blocked_until&&new Date(row.blocked_until)>new Date())throw Object.assign(new Error('Too many sign-in attempts. Try again later.'),{status:429});return hash;}
 async function rateFailure(client,hash){await client.query(`INSERT INTO login_limits(key_hash,attempts,window_started_at) VALUES($1,1,now()) ON CONFLICT(key_hash) DO UPDATE SET attempts=CASE WHEN login_limits.window_started_at < now()-($2||' minutes')::interval THEN 1 ELSE login_limits.attempts+1 END,window_started_at=CASE WHEN login_limits.window_started_at < now()-($2||' minutes')::interval THEN now() ELSE login_limits.window_started_at END,blocked_until=CASE WHEN login_limits.attempts+1 >= $3 THEN now()+($2||' minutes')::interval ELSE login_limits.blocked_until END`,[hash,String(rateMinutes),maxAttempts]);}
 async function session(client,user,req,familyId=randomUUID()){const id=randomUUID(),accessToken=newToken(),refreshToken=newToken();await client.query(`INSERT INTO auth_sessions(id,family_id,user_id,access_token_hash,refresh_token_hash,access_expires_at,refresh_expires_at,ip_address,user_agent) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,[id,familyId,user.id,tokenHash(accessToken),tokenHash(refreshToken),nowPlus(accessMinutes,60000),nowPlus(refreshDays,86400000),ipOf(req),req.headers['user-agent']||'']);return{id,accessToken,refreshToken,accessExpiresAt:nowPlus(accessMinutes,60000).toISOString(),refreshExpiresAt:nowPlus(refreshDays,86400000).toISOString()};}
 async function authUser(req){const token=req.headers.authorization?.replace(/^Bearer\s+/i,'');if(!token)return null;const hashes=tokenHashes(token);const found=await query(`SELECT u.* FROM auth_sessions s JOIN users u ON u.id=s.user_id WHERE s.access_token_hash=ANY($1) AND s.revoked_at IS NULL AND s.access_expires_at>now() AND u.active=true`,[hashes]);return found.rows[0]||null;}
-async function issueOneTime(client,userId,purpose,email,phone,req){const raw=newToken();await client.query('DELETE FROM one_time_tokens WHERE user_id=$1 AND purpose=$2 AND used_at IS NULL',[userId,purpose]);await client.query('INSERT INTO one_time_tokens(id,user_id,purpose,token_hash,expires_at) VALUES($1,$2,$3,$4,$5)',[randomUUID(),userId,purpose,tokenHash(raw),nowPlus(purpose==='password_reset'?30:1440,60000)]);const channel=email?'email':'sms',destination=email||phone;if(destination){const payload={token:raw,purpose},notificationId=randomUUID();await client.query('INSERT INTO notification_outbox(id,channel,destination,template,payload) VALUES($1,$2,$3,$4,$5)',[notificationId,channel,destination,purpose,JSON.stringify(payload)]);void deliver(notificationId,channel,destination,purpose,payload);}await audit(client,userId,`${purpose}.requested`,req);return production?undefined:raw;}
+async function issueOneTime(client,userId,purpose,email,phone,req,pendingDeliveries){const raw=newToken();await client.query('DELETE FROM one_time_tokens WHERE user_id=$1 AND purpose=$2 AND used_at IS NULL',[userId,purpose]);await client.query('INSERT INTO one_time_tokens(id,user_id,purpose,token_hash,expires_at) VALUES($1,$2,$3,$4,$5)',[randomUUID(),userId,purpose,tokenHash(raw),nowPlus(purpose==='password_reset'?30:1440,60000)]);const channel=email?'email':'sms',destination=email||phone;if(destination){const payload={token:raw,purpose},notificationId=randomUUID();await client.query('INSERT INTO notification_outbox(id,channel,destination,template,payload) VALUES($1,$2,$3,$4,$5)',[notificationId,channel,destination,purpose,JSON.stringify(payload)]);if(Array.isArray(pendingDeliveries))pendingDeliveries.push({id:notificationId,channel,destination,template:purpose,payload});else void deliver(notificationId,channel,destination,purpose,payload);}await audit(client,userId,`${purpose}.requested`,req);return production?undefined:raw;}
 async function deliver(id,channel,destination,template,payload){if(!process.env.NOTIFICATION_WEBHOOK_URL)return;const body=JSON.stringify({channel,destination,template,payload});const signature=createHmac('sha256',process.env.NOTIFICATION_WEBHOOK_SECRET_CURRENT||'development').update(body).digest('hex');try{const result=await fetch(process.env.NOTIFICATION_WEBHOOK_URL,{method:'POST',headers:{'content-type':'application/json','x-gatsi-signature':signature},body});if(!result.ok)throw new Error(`Notification webhook returned ${result.status}`);await query('UPDATE notification_outbox SET delivered_at=now(),attempts=attempts+1 WHERE id=$1',[id]);}catch(error){await query('UPDATE notification_outbox SET attempts=attempts+1,last_error=$2 WHERE id=$1',[id,error.message]);await reportError(error);}}
 
 let initialization;

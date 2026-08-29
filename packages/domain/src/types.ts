@@ -267,6 +267,7 @@ export type AppAction =
   | { type: 'LOGOUT' }
   | { type: 'SET_BRANCH'; branchId: string }
   | { type: 'CREATE_ORDER'; order: Order }
+  | { type: 'CREATE_CUSTOMER_AND_ORDER'; customer: Customer; user: User; order: Order }
   | { type: 'UPDATE_ORDER_STATUS'; orderId: string; status: OrderStatus; userId: string; note?: string }
   | { type: 'ADD_PAYMENT'; payment: Payment }
   | { type: 'CREATE_PICKUP'; request: PickupRequest }
