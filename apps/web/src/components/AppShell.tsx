@@ -1,5 +1,5 @@
 import { getActiveUser, visibleNotifications, type AppNotification, type Role } from '@gatsi/domain';
-import { Bell, Boxes, Building2, ChartNoAxesCombined, ClipboardCheck, CreditCard, Home, LogOut, MapPin, Menu, Package2, ReceiptText, Scissors, Shirt, Store, Truck, UserRound, UsersRound, X } from 'lucide-react';
+import { Bell, Boxes, Building2, ChartNoAxesCombined, CircleAlert, ClipboardCheck, CloudOff, CreditCard, Home, LogOut, MapPin, Menu, Package2, ReceiptText, RefreshCw, Scissors, Shirt, Store, Truck, UserRound, UsersRound, X } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { useAppStore } from '../store/AppStore';
@@ -32,7 +32,7 @@ const navigation = (role: Role): NavItem[] => role === 'admin' ? [
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { state, dispatch } = useAppStore();
+  const { state, dispatch, sync, syncNow } = useAppStore();
   const user = getActiveUser(state)!;
   const notifications = visibleNotifications(state);
   const unread = notifications.filter((notification) => !notification.readByUserIds?.includes(user.id));
@@ -60,6 +60,13 @@ export function AppShell({ children }: { children: ReactNode }) {
     dispatch({ type: 'SET_BRANCH', branchId });
     setNotificationsOpen(false);
   };
+  const syncLabel = sync.phase === 'offline'
+    ? `Offline${sync.pendingCount ? ` · ${sync.pendingCount} saved` : ''}`
+    : sync.phase === 'syncing'
+      ? `Syncing${sync.pendingCount ? ` ${sync.pendingCount}` : ''}`
+      : sync.phase === 'error'
+        ? 'Sync issue'
+        : sync.pendingCount ? `${sync.pendingCount} pending` : '';
 
   return <div className="app-shell">
     <aside className={`sidebar ${open ? 'sidebar-open' : ''}`}>
@@ -74,6 +81,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         <button type="button" aria-label="Open menu" className="menu-button" onClick={() => setOpen(true)}><Menu /></button>
         <div className="branch-control"><MapPin size={16} /><select aria-label="Active branch" value={state.activeBranchId} onChange={(event) => selectBranch(event.target.value)} disabled={user.role !== 'admin'}>{user.role === 'admin' ? <option value="all">All branches</option> : null}{state.branches.filter((item) => item.active && (user.role === 'admin' || user.branchIds.includes(item.id))).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
         <div className="topbar-spacer" />
+        {syncLabel ? <button type="button" className={`sync-indicator sync-${sync.phase}`} title={sync.lastError ?? syncLabel} disabled={sync.phase === 'syncing'} onClick={() => void syncNow()}>
+          {sync.phase === 'offline' ? <CloudOff /> : sync.phase === 'error' ? <CircleAlert /> : <RefreshCw className={sync.phase === 'syncing' ? 'sync-spin' : ''} />}
+          <span>{syncLabel}</span>
+        </button> : null}
         <div className="notification-menu" ref={notificationMenu}>
           <button
             type="button"

@@ -30,6 +30,14 @@ These credentials are for local development. Production credentials live in prot
 
 PostgreSQL is the system of record. Web and mobile retain a local resilience cache while authenticated mutations synchronize through the API.
 
+## Offline operation
+
+After one successful online sign-in, both clients keep the authenticated, role-scoped workspace available when the API or internet connection is unavailable. Orders for existing customers, workflow updates, payments, pickups, inventory adjustments, retail sales and other non-credential actions update the interface immediately, are stored in a FIFO queue and replay automatically when connectivity returns. A visible status indicator shows offline, syncing, pending and rejected states; tapping it retries synchronization.
+
+Every queued mutation has a stable idempotency key recorded by PostgreSQL, so retrying after a lost response cannot duplicate an order, payment, stock adjustment or sale. Server validation remains authoritative: if an offline change conflicts with newer server data, the rejected change is removed, the server version is restored and the sync indicator reports the issue.
+
+The web service worker caches the production application shell after the first online visit. Mobile assets are already packaged in the Expo build. First-time sign-in, password reset/change, verification, daily-summary generation and actions that contain new login credentials remain online-only; plaintext passwords are never written to an offline queue.
+
 Administrators can maintain branches, services, staff, customers, their own login username and profile, and saleable clothing stock. A dedicated Store view keeps retail products separate from services and operating inventory; each sale preserves the original list price alongside its final negotiated price, reduces stock atomically and remains in sales history. Daily operations summaries are stored separately from role-scoped app state and include branch, order, payment, pickup, staffing, supply and clothing-sales metrics.
 
 ## Included branches

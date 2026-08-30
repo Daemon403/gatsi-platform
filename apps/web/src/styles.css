@@ -55,6 +55,13 @@ svg { width: 19px; height: 19px; stroke-width: 2; }
 .branch-control { display: flex; align-items: center; gap: 7px; color: var(--green); }
 .branch-control select { border: 0; outline: 0; color: var(--ink); background: transparent; font-size: 13px; font-weight: 750; }
 .topbar-spacer { flex: 1; }
+.sync-indicator { min-height: 35px; padding: 0 10px; border: 1px solid var(--line); border-radius: 99px; color: var(--green); background: var(--green-soft); display: inline-flex; align-items: center; gap: 6px; font-size: 9px; font-weight: 850; }
+.sync-indicator svg { width: 14px; height: 14px; }
+.sync-indicator:disabled { cursor: wait; opacity: .8; }
+.sync-offline { color: var(--amber); border-color: #f0d18c; background: var(--amber-soft); }
+.sync-error { color: var(--red); border-color: #efb8bc; background: var(--red-soft); }
+.sync-spin { animation: sync-spin .9s linear infinite; }
+@keyframes sync-spin { to { transform: rotate(360deg); } }
 .icon-button { position: relative; width: 42px; height: 42px; border: 1px solid var(--line); border-radius: 13px; background: #fff; display: grid; place-items: center; color: #475467; }
 .icon-button i { position: absolute; top: 8px; right: 8px; width: 7px; height: 7px; border: 2px solid #fff; border-radius: 50%; background: var(--green); }
 .icon-button.active { color: var(--green); border-color: #b7ddc9; background: var(--green-soft); }
@@ -571,6 +578,8 @@ a.notification-item:hover { background: var(--green-soft); }
   .topbar { height: 68px; padding: 0 14px; }
   .branch-control select { max-width: 135px; }
   .user-chip div { display: none; }
+  .sync-indicator span { display: none; }
+  .sync-indicator { width: 35px; padding: 0; justify-content: center; }
   .notification-panel { right: -53px; }
   .content { padding: 21px 14px 34px; }
   .page-title { align-items: flex-start; flex-direction: column; margin-bottom: 20px; }

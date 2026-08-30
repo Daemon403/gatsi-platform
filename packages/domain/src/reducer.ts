@@ -212,8 +212,10 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
         activities: [activity(state, { branchId: user.branchIds[0] ?? state.activeBranchId, userId: user.id, message: `clocked ${clockedIn ? 'in' : 'out'}`, kind: 'staff' }), ...state.activities],
       };
     }
-    case 'CREATE_CUSTOMER':
-      return { ...state, customers: [action.customer, ...state.customers], users: [{ ...action.user, verified: true, active: true }, ...state.users] };
+    case 'CREATE_CUSTOMER': {
+      const { password: _password, ...user } = action.user;
+      return { ...state, customers: [action.customer, ...state.customers], users: [{ ...user, verified: false, active: true }, ...state.users] };
+    }
     case 'CREATE_BRANCH':
       return { ...state, branches: [action.branch, ...state.branches] };
     case 'CREATE_SERVICE':

@@ -2,12 +2,12 @@ import { Feather } from '@expo/vector-icons';
 import { getActiveBranch, getActiveUser, unreadNotifications } from '@gatsi/domain';
 import { useNavigation } from '@react-navigation/native';
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useAppStore } from '../store/AppStore';
 import { colors, radius, shadow } from '../theme';
 
 export function AppHeader({ title, subtitle, back = false, showNotifications = true }: { title?: string; subtitle?: string; back?: boolean; showNotifications?: boolean }) {
-  const { state, dispatch } = useAppStore();
+  const { state, dispatch, sync, syncNow } = useAppStore();
   const user = getActiveUser(state);
   const branch = getActiveBranch(state);
   const navigation = useNavigation<any>();
@@ -19,6 +19,13 @@ export function AppHeader({ title, subtitle, back = false, showNotifications = t
     const next = ids[(ids.indexOf(state.activeBranchId) + 1) % ids.length] ?? 'all';
     dispatch({ type: 'SET_BRANCH', branchId: next });
   };
+  const syncLabel = sync.phase === 'offline'
+    ? `Offline${sync.pendingCount ? ` · ${sync.pendingCount} saved` : ''}`
+    : sync.phase === 'syncing'
+      ? `Syncing${sync.pendingCount ? ` ${sync.pendingCount}` : ''}`
+      : sync.phase === 'error'
+        ? 'Sync issue'
+        : sync.pendingCount ? `${sync.pendingCount} pending` : '';
 
   return (
     <View style={styles.header}>
@@ -36,6 +43,14 @@ export function AppHeader({ title, subtitle, back = false, showNotifications = t
             {user?.role === 'admin' ? <Feather name="chevron-down" size={14} color={colors.primary} /> : null}
           </TouchableOpacity>
         )}
+        {syncLabel ? <TouchableOpacity disabled={sync.phase === 'syncing'} onPress={() => {
+          if (sync.phase === 'error' && sync.lastError) {
+            Alert.alert('Sync issue', `${sync.lastError}\n\nThe server version was restored for any rejected change.`, [{ text: 'Dismiss' }, { text: 'Try again', onPress: () => void syncNow() }]);
+          } else void syncNow();
+        }} style={[styles.syncRow, sync.phase === 'offline' && styles.syncOffline, sync.phase === 'error' && styles.syncError]}>
+          <Feather name={sync.phase === 'offline' ? 'cloud-off' : sync.phase === 'error' ? 'alert-circle' : 'refresh-cw'} size={11} color={sync.phase === 'error' ? colors.red : sync.phase === 'offline' ? colors.amber : colors.primary} />
+          <Text style={[styles.syncText, sync.phase === 'offline' && styles.syncTextOffline, sync.phase === 'error' && styles.syncTextError]}>{syncLabel}</Text>
+        </TouchableOpacity> : null}
       </View>
       {showNotifications ? <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Notifications, ${unread.length} unread`} onPress={() => navigation.navigate('Notifications')} style={styles.squareButton}>
         <Feather name="bell" size={21} color={colors.ink} />
@@ -56,6 +71,8 @@ const styles = StyleSheet.create({
   subtitle: { color: colors.muted, fontSize: 13, marginTop: 4 },
   branchRow: { flexDirection: 'row', gap: 5, alignItems: 'center', marginTop: 5 },
   branchText: { color: colors.primary, fontSize: 13, fontWeight: '700' },
+  syncRow: { alignSelf: 'flex-start', marginTop: 4, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 99, backgroundColor: colors.primarySoft, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  syncOffline: { backgroundColor: colors.amberSoft }, syncError: { backgroundColor: colors.redSoft }, syncText: { color: colors.primary, fontSize: 9, fontWeight: '800' }, syncTextOffline: { color: colors.amber }, syncTextError: { color: colors.red },
   squarePlaceholder: { width: 48, height: 48 },
   notificationBadge: { minWidth: 18, height: 18, paddingHorizontal: 4, borderRadius: 9, backgroundColor: colors.red, borderWidth: 2, borderColor: '#fff', position: 'absolute', top: 5, right: 5, alignItems: 'center', justifyContent: 'center' },
   notificationCount: { color: '#fff', fontSize: 8, fontWeight: '900' },
