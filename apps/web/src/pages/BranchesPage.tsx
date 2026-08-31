@@ -1,7 +1,7 @@
 import { branchRevenue, getActiveUser, makeId, money, orderBalance, type AppAction, type Branch } from '@gatsi/domain';
 import { Building2, CheckCircle2, CircleOff, DollarSign, MapPin, Package2, Pencil, Phone, Plus, RotateCcw, Trash2, UsersRound } from 'lucide-react';
 import { useState } from 'react';
-import { Button, Card, FormField, PageTitle } from '../components/ui';
+import { Button, Card, Empty, FormField, PageTitle } from '../components/ui';
 import { useAppStore } from '../store/AppStore';
 import { apiAction } from '../store/api';
 
@@ -166,6 +166,8 @@ function AdminBranchesPage() {
     </Card> : null}
 
     {actionError ? <div className="management-error" role="alert">{actionError}</div> : null}
+
+    {!state.branches.length && !draft ? <Card><Empty title="No branches yet" body="Add the first operating location. Staff, customers, stock and orders can then be assigned to it." /></Card> : null}
 
     <div className="branch-grid">{state.branches.map((branch) => {
       const orders = state.orders.filter((item) => item.branchId === branch.id);

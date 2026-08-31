@@ -18,35 +18,25 @@ A multi-branch textile and dry-cleaning operations platform containing:
 
 Expo SDK 57 uses React Native's New Architecture and Android edge-to-edge behavior. The project uses Continuous Native Generation, so Expo/EAS generates the native Android and iOS projects from `app.json`.
 
-## Local development seed accounts
+## Initial administrator account
 
-| Role | Username | Initial password | Included capabilities |
-| --- | --- | --- | --- |
-| Admin | `Promise` | `GATSI` | All branches and administration |
-| Staff | `RudoStaff` | `NYATHI` | Assigned branch operations |
-| Customer | `Rudo` | `CHIKOWORE` | Own orders, pickups and receipts |
+The API creates one initial administrator only when the database has no administrator account. Local development defaults to username `Promise` and password `GATSI`; production requires `INITIAL_ADMIN_USERNAME` and `INITIAL_ADMIN_PASSWORD` in protected deployment settings. Existing administrator usernames, profile details and password hashes are never replaced by the seed step.
 
-These credentials are for local development. Production credentials live in protected deployment settings and are not committed to Git.
+No branches, staff, customers, services, orders, payments, stock, retail items or other sample business records are seeded. The administrator creates every business record from the fresh workspace.
 
-PostgreSQL is the system of record. Web and mobile retain a local resilience cache while authenticated mutations synchronize through the API.
+PostgreSQL is the system of record. Web and mobile retain only a local resilience cache of authenticated, database-fetched state while mutations synchronize through the API.
 
 ## Offline operation
 
-After one successful online sign-in, both clients keep the authenticated, role-scoped workspace available when the API or internet connection is unavailable. Orders for existing customers, workflow updates, payments, pickups, inventory adjustments, retail sales and other non-credential actions update the interface immediately, are stored in a FIFO queue and replay automatically when connectivity returns. A visible status indicator shows offline, syncing, pending and rejected states; tapping it retries synchronization.
+After one successful online sign-in, both clients keep the authenticated, role-scoped workspace available when the API or internet connection is unavailable. New customers and orders, workflow updates, payments, pickups, inventory adjustments, new branches/services, retail products and retail sales update the interface immediately, are stored in a FIFO queue and replay automatically when connectivity returns. A visible status indicator shows offline, syncing, pending and rejected states; tapping it retries synchronization.
 
 Every queued mutation has a stable idempotency key recorded by PostgreSQL, so retrying after a lost response cannot duplicate an order, payment, stock adjustment or sale. Server validation remains authoritative: if an offline change conflicts with newer server data, the rejected change is removed, the server version is restored and the sync indicator reports the issue.
 
-The web service worker caches the production application shell after the first online visit. Mobile assets are already packaged in the Expo build. First-time sign-in, password reset/change, verification, daily-summary generation and actions that contain new login credentials remain online-only; plaintext passwords are never written to an offline queue.
+The web service worker caches the production application shell after the first online visit. Mobile assets are already packaged in the Expo build. First-time sign-in, password reset/change, verification, daily-summary generation, staff-account administration and conflict-prone record edits remain online-only. Customer passwords are derived by the API from the documented first-name/last-name convention when an offline customer creation syncs; plaintext passwords are never written to an offline queue. Legacy caches without the current database revision are rejected, so previously bundled sample data cannot reappear.
 
 Administrators can maintain branches, services, staff, customers, their own login username and profile, and saleable clothing stock. A dedicated Store view keeps retail products separate from services and operating inventory; each sale preserves the original list price alongside its final negotiated price, reduces stock atomically and remains in sales history. Daily operations summaries are stored separately from role-scoped app state and include branch, order, payment, pickup, staffing, supply and clothing-sales metrics.
 
-## Included branches
-
-- Harare CBD Branch
-- Avondale Branch
-- Murewa Branch
-
-Administrators can switch between a consolidated view and individual branches. Staff access is limited to assigned branches, while customer data is scoped to the customer's own account.
+Administrators can switch between a consolidated view and branches they create. Staff access is limited to assigned branches, while customer data is scoped to the customer's own account.
 
 ## Run locally
 
@@ -70,7 +60,7 @@ npm run web
 
 The API listens on `http://localhost:4000`; Vite normally listens on `http://localhost:5173`. Web uses `VITE_API_URL` and mobile uses `EXPO_PUBLIC_API_URL`. For a physical phone, set the mobile URL to the computer's LAN address instead of `localhost`.
 
-On first local startup, versioned PostgreSQL migrations and development accounts are created. Passwords are salted and hashed with scrypt. Short-lived access tokens and rotating refresh tokens provide authenticated, role-scoped access.
+On first local startup, versioned PostgreSQL migrations and the single initial administrator are created. Passwords are salted and hashed with scrypt. Short-lived access tokens and rotating refresh tokens provide authenticated, role-scoped access.
 
 Important endpoints include:
 
@@ -93,7 +83,7 @@ The repository is configured as one Vercel project:
 - Vite assets are served from `apps/web/dist`.
 - `/api/*` is handled by a Node.js Vercel Function.
 - Neon PostgreSQL is attached through Vercel. Runtime traffic uses the pooled `DATABASE_URL`; migrations use `DATABASE_URL_UNPOOLED`.
-- Production migrations run during the Vercel build. Preview builds skip production migrations.
+- Migrations run during both Production and Preview builds; Preview must use its own Neon branch and connection variables.
 
 Link and deploy from the repository root:
 
@@ -104,7 +94,7 @@ npx vercel deploy --prod
 
 Required Production and Preview variables are `TOKEN_PEPPER_CURRENT`, `CRON_SECRET`, `INITIAL_ADMIN_USERNAME`, `INITIAL_ADMIN_PASSWORD`, `APP_ENV`, `DATABASE_SSL`, `DB_POOL_SIZE` and `CORS_ORIGINS`, in addition to the Neon variables injected by Vercel. Keep passwords, peppers and webhook secrets marked sensitive.
 
-The Vercel build applies versioned migrations in both Preview and Production. Configure `DATABASE_URL_UNPOOLED` for migrations and keep pooled `DATABASE_URL` for runtime requests.
+The Vercel build applies versioned migrations in both Preview and Production. Configure `DATABASE_URL_UNPOOLED` for migrations and keep pooled `DATABASE_URL` for runtime requests. Migration `008_fresh_admin_only_state.sql` is the authorized one-time reset: it preserves administrator account details and password hashes, removes every non-admin account and business record, and invalidates existing sessions. Take or confirm a Neon restore point before the first deployment containing it.
 
 Vercel is the canonical scheduler for daily operations summaries. It calls `GET /api/cron/daily-operations` at 22:05 UTC (00:05 Africa/Harare) and authenticates the request with `CRON_SECRET`. Do not enable a Render cron job or another scheduler against the same database while this Vercel cron is active; use exactly one scheduler per database to avoid duplicate generation attempts.
 

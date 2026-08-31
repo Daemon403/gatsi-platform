@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit && node --check public/sw.js && node --test test/*.test.mjs"
   },
   "dependencies": {
     "@gatsi/domain": "*",

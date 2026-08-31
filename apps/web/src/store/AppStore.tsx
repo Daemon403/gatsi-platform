@@ -1,19 +1,14 @@
-import { appReducer, createDemoState, type AppAction, type AppState } from '@gatsi/domain';
+import { appReducer, createEmptyState, DATA_REVISION, type AppAction, type AppState } from '@gatsi/domain';
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { ApiError, apiAction, apiLogout, apiState, applyPendingActions, getPendingActionCount, getSyncSnapshot, hasApiSession, isNetworkError, setConnectivity, subscribeSync, syncPendingActions, type SyncSnapshot } from './api';
+import { ApiError, apiAction, apiLogout, apiState, canQueueOffline, clearSyncFailure, getCachedProjection, getPendingActionCount, getSyncSnapshot, handleOfflineStorageChange, hasApiSession, isNetworkError, isSessionStorageKey, setConnectivity, subscribeSync, syncPendingActions, type SyncSnapshot } from './api';
 
 const STORAGE_KEY = 'gatsi-comms-web-state-v1';
 const withoutPasswords = (state: AppState): AppState => ({ ...state, users: state.users.map(({ password: _password, ...user }) => user) });
 
 function initialState() {
-  try {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      const state = JSON.parse(stored) as AppState;
-      if (state.version === 1) return withoutPasswords(state);
-    }
-  } catch { /* use demo data */ }
-  return withoutPasswords(createDemoState());
+  const stored = hasApiSession() ? getCachedProjection() : undefined;
+  if (stored?.version === 1 && stored.dataRevision === DATA_REVISION) return withoutPasswords(stored);
+  return createEmptyState();
 }
 
 type StoreValue = { state: AppState; dispatch: React.Dispatch<AppAction>; sync: SyncSnapshot; syncNow: () => Promise<void> };
@@ -27,93 +22,128 @@ const preserveBranch = (remote: AppState, local: AppState) => {
     : remote;
 };
 
-const localOnly = new Set<AppAction['type']>(['HYDRATE', 'LOGIN', 'LOGOUT', 'SET_BRANCH', 'RESET_DEMO']);
-const containsCredentials = (action: AppAction) => action.type === 'CREATE_CUSTOMER'
-  || action.type === 'CREATE_CUSTOMER_AND_ORDER'
-  || action.type === 'CREATE_STAFF'
-  || (action.type === 'RESTORE_STAFF' && Boolean(action.password));
+const localOnly = new Set<AppAction['type']>(['HYDRATE', 'LOGIN', 'LOGOUT', 'SET_BRANCH', 'CLEAR_LOCAL_STATE']);
 
 export function AppStoreProvider({ children }: React.PropsWithChildren) {
   const [state, localDispatch] = useReducer(appReducer, undefined, initialState);
   const stateRef = useRef(state);
+  const sessionEpochRef = useRef(0);
   const [sync, setSync] = useState(getSyncSnapshot);
 
-  const hydrate = useCallback((remote: AppState) => {
+  const hydrate = useCallback((remote: AppState, expected?: { userId: string; epoch: number }) => {
+    if (expected && (sessionEpochRef.current !== expected.epoch || stateRef.current.activeUserId !== expected.userId)) return;
+    if (stateRef.current.activeUserId && remote.activeUserId !== stateRef.current.activeUserId) return;
     const next = preserveBranch(remote, stateRef.current);
     stateRef.current = next;
     localDispatch({ type: 'HYDRATE', state: next });
   }, []);
 
+  const resetWorkspace = useCallback(() => {
+    sessionEpochRef.current += 1;
+    const empty = createEmptyState();
+    stateRef.current = empty;
+    localDispatch({ type: 'HYDRATE', state: empty });
+  }, []);
+
   const reconcile = useCallback(async () => {
     if (!hasApiSession()) {
-      if (stateRef.current.activeUserId) {
-        stateRef.current = appReducer(stateRef.current, { type: 'LOGOUT' });
-        localDispatch({ type: 'LOGOUT' });
-      }
+      if (stateRef.current.activeUserId) resetWorkspace();
       return;
     }
+    const userId = stateRef.current.activeUserId;
+    if (!userId) return;
+    const expected = { userId, epoch: sessionEpochRef.current };
     try {
-      const pending = getPendingActionCount(stateRef.current.activeUserId ?? undefined);
+      const pending = getPendingActionCount(userId);
       if (pending) {
         const synced = await syncPendingActions();
-        if (synced) hydrate(synced);
+        if (synced) hydrate(synced, expected);
       } else {
         const remote = await apiState();
-        hydrate(applyPendingActions(preserveBranch(remote, stateRef.current)));
+        hydrate(remote, expected);
         setConnectivity(true);
       }
     } catch (error) {
       if (isNetworkError(error)) return;
       if (error instanceof ApiError && error.status === 401) {
-        await apiLogout();
-        stateRef.current = appReducer(stateRef.current, { type: 'LOGOUT' });
-        localDispatch({ type: 'LOGOUT' });
+        resetWorkspace();
+        void apiLogout();
       }
     }
-  }, [hydrate]);
+  }, [hydrate, resetWorkspace]);
 
   const dispatch: React.Dispatch<AppAction> = useCallback((action) => {
-    if (action.type === 'LOGOUT') {
-      stateRef.current = appReducer(stateRef.current, action);
-      localDispatch(action);
+    if (action.type === 'LOGOUT' || action.type === 'CLEAR_LOCAL_STATE') {
+      resetWorkspace();
       void apiLogout();
       return;
     }
     if (localOnly.has(action.type)) {
+      if (action.type === 'HYDRATE' && action.state.activeUserId && (!hasApiSession() || (stateRef.current.activeUserId && action.state.activeUserId !== stateRef.current.activeUserId))) return;
       stateRef.current = appReducer(stateRef.current, action);
       localDispatch(action);
       return;
     }
     const previous = stateRef.current;
-    if (!containsCredentials(action)) {
+    const expected = previous.activeUserId ? { userId: previous.activeUserId, epoch: sessionEpochRef.current } : undefined;
+    if (canQueueOffline(action)) {
       stateRef.current = appReducer(stateRef.current, action);
       localDispatch(action);
     }
     if (!hasApiSession()) return;
-    void apiAction(action, previous).then(hydrate).catch(() => void reconcile());
-  }, [hydrate, reconcile]);
+    void apiAction(action, previous)
+      .then((remote) => expected ? hydrate(remote, expected) : undefined)
+      .catch((error) => {
+        if (canQueueOffline(action)) {
+          const projection = getCachedProjection();
+          if (projection && expected) hydrate(projection, expected);
+        }
+        if (error instanceof ApiError && error.status === 401) void reconcile();
+      });
+  }, [hydrate, reconcile, resetWorkspace]);
 
   useEffect(() => subscribeSync(setSync), []);
   useEffect(() => {
     const online = () => { setConnectivity(true); void reconcile(); };
     const offline = () => setConnectivity(false);
     const visible = () => { if (document.visibilityState === 'visible' && navigator.onLine) void reconcile(); };
+    const storage = (event: StorageEvent) => {
+      handleOfflineStorageChange(event.key);
+      const projection = getCachedProjection();
+      if (isSessionStorageKey(event.key)) {
+        sessionEpochRef.current += 1;
+        if (!hasApiSession() || !projection) resetWorkspace();
+        else if (projection) {
+          const next = withoutPasswords(projection);
+          stateRef.current = next;
+          localDispatch({ type: 'HYDRATE', state: next });
+        }
+      } else if (projection?.activeUserId === stateRef.current.activeUserId) {
+        hydrate(projection, projection.activeUserId ? { userId: projection.activeUserId, epoch: sessionEpochRef.current } : undefined);
+      } else if (!stateRef.current.activeUserId && projection && hasApiSession()) {
+        hydrate(projection);
+      }
+      void reconcile();
+    };
     window.addEventListener('online', online);
     window.addEventListener('offline', offline);
+    window.addEventListener('storage', storage);
     document.addEventListener('visibilitychange', visible);
     const timer = window.setInterval(() => { if (getSyncSnapshot().phase === 'offline' || getSyncSnapshot().pendingCount) void reconcile(); }, 30_000);
     void reconcile();
     return () => {
       window.removeEventListener('online', online);
       window.removeEventListener('offline', offline);
+      window.removeEventListener('storage', storage);
       document.removeEventListener('visibilitychange', visible);
       window.clearInterval(timer);
     };
-  }, [reconcile]);
+  }, [hydrate, reconcile, resetWorkspace]);
   useEffect(() => { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }, [state]);
   useEffect(() => { stateRef.current = state; }, [state]);
   useEffect(() => { if (state.activeUserId) void reconcile(); }, [state.activeUserId, reconcile]);
-  const value = useMemo(() => ({ state, dispatch, sync, syncNow: reconcile }), [state, dispatch, sync, reconcile]);
+  const syncNow = useCallback(async () => { clearSyncFailure(); await reconcile(); }, [reconcile]);
+  const value = useMemo(() => ({ state, dispatch, sync, syncNow }), [state, dispatch, sync, syncNow]);
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }
 

@@ -1,8 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { appReducer, createDemoState, type AppAction, type AppState } from '@gatsi/domain';
+import { appReducer, createEmptyState, DATA_REVISION, type AppAction, type AppState } from '@gatsi/domain';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { AppState as NativeAppState } from 'react-native';
-import { ApiError, apiAction, apiLogout, apiState, applyPendingActions, getPendingActionCount, getSyncSnapshot, hasApiSession, isNetworkError, setConnectivity, subscribeSync, syncPendingActions, type SyncSnapshot } from './api';
+import { ApiError, apiAction, apiLogout, apiState, canQueueOffline, clearSyncFailure, getCachedProjection, getPendingActionCount, getSyncSnapshot, hasApiSession, isNetworkError, setConnectivity, subscribeSync, syncPendingActions, type SyncSnapshot } from './api';
 
 const STORAGE_KEY = 'gatsi-comms-state-v1';
 const withoutPasswords = (state: AppState): AppState => ({ ...state, users: state.users.map(({ password: _password, ...user }) => user) });
@@ -25,84 +25,111 @@ const preserveBranch = (remote: AppState, local: AppState) => {
     : remote;
 };
 
-const localOnly = new Set<AppAction['type']>(['HYDRATE', 'LOGIN', 'LOGOUT', 'SET_BRANCH', 'RESET_DEMO']);
-const containsCredentials = (action: AppAction) => action.type === 'CREATE_CUSTOMER'
-  || action.type === 'CREATE_CUSTOMER_AND_ORDER'
-  || action.type === 'CREATE_STAFF'
-  || (action.type === 'RESTORE_STAFF' && Boolean(action.password));
+const localOnly = new Set<AppAction['type']>(['HYDRATE', 'LOGIN', 'LOGOUT', 'SET_BRANCH']);
 
 export function AppStoreProvider({ children }: React.PropsWithChildren) {
-  const [state, localDispatch] = useReducer(appReducer, undefined, () => withoutPasswords(createDemoState()));
+  const [state, localDispatch] = useReducer(appReducer, undefined, createEmptyState);
   const stateRef = useRef(state);
+  const sessionEpochRef = useRef(0);
   const [hydrated, setHydrated] = useState(false);
   const [sync, setSync] = useState(getSyncSnapshot);
 
-  const hydrate = useCallback((remote: AppState) => {
+  const hydrate = useCallback((remote: AppState, expected?: { userId: string; epoch: number }) => {
+    if (expected && (sessionEpochRef.current !== expected.epoch || stateRef.current.activeUserId !== expected.userId)) return;
+    if (stateRef.current.activeUserId && remote.activeUserId !== stateRef.current.activeUserId) return;
     const next = preserveBranch(remote, stateRef.current);
     stateRef.current = next;
     localDispatch({ type: 'HYDRATE', state: next });
   }, []);
 
+  const resetWorkspace = useCallback(() => {
+    sessionEpochRef.current += 1;
+    const empty = createEmptyState();
+    stateRef.current = empty;
+    localDispatch({ type: 'HYDRATE', state: empty });
+  }, []);
+
   const reconcile = useCallback(async () => {
     if (!(await hasApiSession())) {
-      if (stateRef.current.activeUserId) {
-        stateRef.current = appReducer(stateRef.current, { type: 'LOGOUT' });
-        localDispatch({ type: 'LOGOUT' });
-      }
+      if (stateRef.current.activeUserId) resetWorkspace();
       return;
     }
+    const userId = stateRef.current.activeUserId;
+    if (!userId) return;
+    const expected = { userId, epoch: sessionEpochRef.current };
     try {
-      const pending = await getPendingActionCount(stateRef.current.activeUserId ?? undefined);
+      const pending = await getPendingActionCount(userId);
       if (pending) {
         const synced = await syncPendingActions();
-        if (synced) hydrate(synced);
+        if (synced) hydrate(synced, expected);
       } else {
         const remote = await apiState();
-        hydrate(await applyPendingActions(preserveBranch(remote, stateRef.current)));
+        hydrate(remote, expected);
         setConnectivity(true);
       }
     } catch (error) {
       if (isNetworkError(error)) return;
       if (error instanceof ApiError && error.status === 401) {
-        await apiLogout();
-        stateRef.current = appReducer(stateRef.current, { type: 'LOGOUT' });
-        localDispatch({ type: 'LOGOUT' });
+        resetWorkspace();
+        void apiLogout();
       }
     }
-  }, [hydrate]);
+  }, [hydrate, resetWorkspace]);
 
   const dispatch: React.Dispatch<AppAction> = useCallback((action) => {
     if (action.type === 'LOGOUT') {
-      stateRef.current = appReducer(stateRef.current, action);
-      localDispatch(action);
+      resetWorkspace();
+      void apiLogout();
+      return;
+    }
+    if (action.type === 'CLEAR_LOCAL_STATE') {
+      // Clearing the local database cache also ends the device session.
+      resetWorkspace();
       void apiLogout();
       return;
     }
     if (localOnly.has(action.type)) {
+      if (action.type === 'HYDRATE' && action.state.activeUserId) {
+        if (stateRef.current.activeUserId && action.state.activeUserId !== stateRef.current.activeUserId) return;
+        if (!stateRef.current.activeUserId) {
+          void hasApiSession().then((active) => {
+            if (active && !stateRef.current.activeUserId) hydrate(action.state);
+          });
+          return;
+        }
+      }
       stateRef.current = appReducer(stateRef.current, action);
       localDispatch(action);
       return;
     }
     const previous = stateRef.current;
-    if (!containsCredentials(action)) {
+    const expected = previous.activeUserId ? { userId: previous.activeUserId, epoch: sessionEpochRef.current } : undefined;
+    if (canQueueOffline(action)) {
       stateRef.current = appReducer(stateRef.current, action);
       localDispatch(action);
     }
-    void hasApiSession().then((active) => active ? apiAction(action, previous).then(hydrate).catch(() => void reconcile()) : undefined);
-  }, [hydrate, reconcile]);
+    void hasApiSession().then((active) => active ? apiAction(action, previous)
+      .then((remote) => expected ? hydrate(remote, expected) : undefined)
+      .catch(async (error) => {
+        // A permanent server rejection has already restored the confirmed
+        // projection. Hydrate that rollback without immediately fetching again
+        // and erasing the sync error users need to see.
+        const projection = await getCachedProjection();
+        if (projection && expected) hydrate(projection, expected);
+        if (error instanceof ApiError && error.status === 401) void reconcile();
+      }) : undefined);
+  }, [hydrate, reconcile, resetWorkspace]);
 
   useEffect(() => {
-    Promise.all([hasApiSession(), AsyncStorage.getItem(STORAGE_KEY)])
-      .then(async ([active, value]) => {
-        if (value) {
-          const stored = JSON.parse(value) as AppState;
-          if (stored.version === 1) {
-            const cached = withoutPasswords(stored);
-            stateRef.current = cached;
-            localDispatch({ type: 'HYDRATE', state: cached });
-          }
+    Promise.all([hasApiSession(), getCachedProjection()])
+      .then(([active, stored]) => {
+        if (active && stored?.version === 1 && stored.dataRevision === DATA_REVISION) {
+          const cached = withoutPasswords(stored);
+          stateRef.current = cached;
+          localDispatch({ type: 'HYDRATE', state: cached });
         }
-        if (active) await reconcile();
+        setHydrated(true);
+        if (active) void reconcile();
       })
       .catch(() => undefined)
       .finally(() => setHydrated(true));
@@ -121,7 +148,8 @@ export function AppStoreProvider({ children }: React.PropsWithChildren) {
   useEffect(() => { stateRef.current = state; }, [state]);
   useEffect(() => { if (state.activeUserId) void reconcile(); }, [state.activeUserId, reconcile]);
 
-  const value = useMemo(() => ({ state, dispatch, hydrated, sync, syncNow: reconcile }), [state, dispatch, hydrated, sync, reconcile]);
+  const syncNow = useCallback(async () => { await clearSyncFailure(); await reconcile(); }, [reconcile]);
+  const value = useMemo(() => ({ state, dispatch, hydrated, sync, syncNow }), [state, dispatch, hydrated, sync, syncNow]);
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }
 

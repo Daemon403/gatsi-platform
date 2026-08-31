@@ -14,16 +14,29 @@ import { colors } from '../theme';
 const initials = (name: string) => name.split(' ').filter(Boolean).map((part) => part[0]).join('').slice(0, 2).toUpperCase();
 
 export function MoreScreen() {
-  const { state, dispatch } = useAppStore();
+  const { state, dispatch, sync } = useAppStore();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const currentUser = getActiveUser(state)!;
   const canViewTeam = currentUser.role === 'admin' || currentUser.role === 'staff';
   const canViewBranches = currentUser.role === 'admin';
 
-  const logout = () => dispatch({ type: 'LOGOUT' });
-  const reset = () => Alert.alert('Reset local data?', 'This removes local changes and restores the original records.', [
+  const logout = () => {
+    if (!sync.pendingCount) {
+      dispatch({ type: 'LOGOUT' });
+      return;
+    }
+    Alert.alert(
+      'Unsynced work will be discarded',
+      `${sync.pendingCount} saved offline ${sync.pendingCount === 1 ? 'change has' : 'changes have'} not synced yet. Sign out anyway?`,
+      [
+        { text: 'Stay signed in', style: 'cancel' },
+        { text: 'Discard and sign out', style: 'destructive', onPress: () => dispatch({ type: 'LOGOUT' }) },
+      ],
+    );
+  };
+  const reset = () => Alert.alert('Clear local data?', `This clears this device's cached workspace${sync.pendingCount ? ` and discards ${sync.pendingCount} unsynced ${sync.pendingCount === 1 ? 'change' : 'changes'}` : ''}, then returns to secure sign in. Server records are not deleted.`, [
     { text: 'Cancel', style: 'cancel' },
-    { text: 'Reset', style: 'destructive', onPress: () => dispatch({ type: 'RESET_DEMO' }) },
+    { text: 'Clear and sign out', style: 'destructive', onPress: () => dispatch({ type: 'CLEAR_LOCAL_STATE' }) },
   ]);
 
   return <Screen>
@@ -83,7 +96,7 @@ export function MoreScreen() {
     <SectionTitle title="Workspace" />
     <Card style={styles.menu}>
       <MenuItem icon="log-out" title="Sign out" detail="Return to secure account login" onPress={logout} />
-      <MenuItem icon="refresh-cw" title="Reset local data" detail="Restore the original records" onPress={reset} danger />
+      <MenuItem icon="trash-2" title="Clear local data" detail="Discard this device's cache and return to sign in" onPress={reset} danger />
     </Card>
     <Text style={styles.version}>Gatsi Comms Suite - Version 1.0.0</Text>
   </Screen>;

@@ -60,6 +60,10 @@ export function AppShell({ children }: { children: ReactNode }) {
     dispatch({ type: 'SET_BRANCH', branchId });
     setNotificationsOpen(false);
   };
+  const signOut = () => {
+    if (sync.pendingCount && !window.confirm(`${sync.pendingCount} saved offline ${sync.pendingCount === 1 ? 'change has' : 'changes have'} not synced yet. Signing out will discard ${sync.pendingCount === 1 ? 'it' : 'them'}. Continue?`)) return;
+    dispatch({ type: 'LOGOUT' });
+  };
   const syncLabel = sync.phase === 'offline'
     ? `Offline${sync.pendingCount ? ` · ${sync.pendingCount} saved` : ''}`
     : sync.phase === 'syncing'
@@ -73,7 +77,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className="brand"><span className="brand-mark">G</span><div><strong>Gatsi Comms</strong><small>Textile & Dry Cleaning</small></div><button type="button" aria-label="Close menu" className="mobile-close" onClick={() => setOpen(false)}><X /></button></div>
       <nav>{navigation(user.role).map((item) => <NavLink onClick={() => setOpen(false)} key={item.path} to={item.path} end={item.path === '/'} className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>{item.icon}<span>{item.label}</span></NavLink>)}</nav>
       <div className="sidebar-support"><Scissors /><strong>Care command centre</strong><span>Tag, clean, finish and deliver every order on time.</span></div>
-      <button type="button" className="nav-link logout" onClick={() => dispatch({ type: 'LOGOUT' })}><LogOut /><span>Sign out</span></button>
+      <button type="button" className="nav-link logout" onClick={signOut}><LogOut /><span>Sign out</span></button>
     </aside>
     {open ? <button type="button" aria-label="Close menu" className="sidebar-scrim" onClick={() => setOpen(false)} /> : null}
     <div className="app-main">

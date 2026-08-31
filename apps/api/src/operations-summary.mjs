@@ -42,16 +42,20 @@ const emptyMetrics = () => ({
   clothingRevenue: 0,
 });
 
-const orderTotal = (order) => Math.max(0,
-  (order.items ?? []).reduce((sum, item) => sum + Number(item.quantity ?? 0) * Number(item.unitPrice ?? 0), 0)
-  - Number(order.discount ?? 0)
-  + Number(order.deliveryFee ?? 0));
-
-const orderPaid = (state, orderId) => (state.payments ?? [])
+const finiteNumber = (value) => typeof value === 'number' && Number.isFinite(value) ? value : 0;
+const integerCents = (value) => {
+  const scaled = finiteNumber(value) * 100;
+  return Math.sign(scaled) * Math.round(Math.abs(scaled) + Number.EPSILON * Math.max(1, Math.abs(scaled)));
+};
+const orderSubtotalCents = (order) => (order.items ?? [])
+  .reduce((sum, item) => sum + integerCents(finiteNumber(item.quantity) * finiteNumber(item.unitPrice)), 0);
+const orderTotalCents = (order) => Math.max(0,
+  orderSubtotalCents(order) - integerCents(order.discount) + integerCents(order.deliveryFee));
+const orderPaidCents = (state, orderId) => (state.payments ?? [])
   .filter((payment) => payment.orderId === orderId)
-  .reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0);
-
-const orderBalance = (state, order) => Math.max(0, orderTotal(order) - orderPaid(state, order.id));
+  .reduce((sum, payment) => sum + integerCents(payment.amount), 0);
+const orderBalanceCents = (state, order) => Math.max(0, orderTotalCents(order) - orderPaidCents(state, order.id));
+const centsTotal = (items, value) => items.reduce((sum, item) => sum + integerCents(value(item)), 0) / 100;
 
 function fallbackWindow(date) {
   const windowStart = new Date(`${date}T00:00:00+02:00`);
@@ -83,10 +87,11 @@ export function buildDailyOperationsSummary(state, requestedDate = harareDateKey
       activeOrders: branchOrders.filter((order) => !['collected', 'cancelled'].includes(order.status)).length,
       urgentOrders: branchOrders.filter((order) => order.priority === 'urgent' && !['collected', 'cancelled'].includes(order.status)).length,
       paymentsRecorded: branchPayments.filter((payment) => harareDateKey(payment.paidAt) === date).length,
-      revenueCollected: branchPayments
-        .filter((payment) => harareDateKey(payment.paidAt) === date)
-        .reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0),
-      outstandingBalance: branchOrders.reduce((sum, order) => sum + orderBalance(state, order), 0),
+      revenueCollected: centsTotal(
+        branchPayments.filter((payment) => harareDateKey(payment.paidAt) === date),
+        (payment) => payment.amount,
+      ),
+      outstandingBalance: branchOrders.reduce((sum, order) => sum + orderBalanceCents(state, order), 0) / 100,
       pickupsRequested: pickups.filter((request) => request.branchId === branch.id && harareDateKey(request.createdAt) === date).length,
       pendingPickups: pickups.filter((request) => request.branchId === branch.id && ['requested', 'scheduled'].includes(request.status)).length,
       activeStaff: users.filter((user) => user.role === 'staff' && user.active !== false && (user.branchIds ?? []).includes(branch.id)).length,
@@ -95,13 +100,14 @@ export function buildDailyOperationsSummary(state, requestedDate = harareDateKey
       operationalEvents: activities.filter((item) => item.branchId === branch.id && harareDateKey(item.at) === date).length,
       clothingSales: branchClothingSales.length,
       clothingUnitsSold: branchClothingSales.reduce((sum, sale) => sum + Number(sale.quantity ?? 0), 0),
-      clothingRevenue: branchClothingSales.reduce((sum, sale) => sum + Number(sale.total ?? 0), 0),
+      clothingRevenue: centsTotal(branchClothingSales, (sale) => sale.total),
     };
   });
   const totals = branches.reduce((sum, branch) => {
     for (const key of Object.keys(sum)) sum[key] += Number(branch[key] ?? 0);
     return sum;
   }, emptyMetrics());
+  for (const key of ['revenueCollected', 'outstandingBalance', 'clothingRevenue']) totals[key] = integerCents(totals[key]) / 100;
   return {
     id: `operations-summary-${date}`,
     date,

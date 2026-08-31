@@ -2,7 +2,7 @@ import { getActiveUser, makeId, money, type AppAction, type Service } from '@gat
 import { ArrowRight, CheckCircle2, CircleOff, Clock3, Droplets, Pencil, Plus, RotateCcw, Scissors, Shirt, Sparkles, Trash2, Truck } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Button, Card, FormField, PageTitle } from '../components/ui';
+import { Button, Card, Empty, FormField, PageTitle } from '../components/ui';
 import { useAppStore } from '../store/AppStore';
 import { apiAction } from '../store/api';
 
@@ -171,6 +171,8 @@ export function ServicesPage() {
     </Card> : null}
 
     {actionError ? <div className="management-error" role="alert">{actionError}</div> : null}
+
+    {!services.length && !draft ? <Card><Empty title="No services yet" body={isAdmin ? 'Add the first service to build the catalogue used for order intake.' : 'No active services are currently available.'} /></Card> : null}
 
     <div className="services-grid">{services.map((service) => <Card className={`service-tile ${service.active ? '' : 'record-inactive'}`} key={service.id}>
       <span>{icons[service.category]}</span><small>{service.category.replaceAll('_', ' ')}</small><h3>{service.name}</h3><p>{service.description}</p>

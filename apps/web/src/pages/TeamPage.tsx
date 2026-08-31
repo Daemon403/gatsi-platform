@@ -157,7 +157,7 @@ export function TeamPage() {
   };
 
   const clockToggle = async (member: User) => {
-    await runMemberAction(member.id, { type: 'CLOCK_TOGGLE', userId: member.id }, 'Attendance could not be updated.');
+    await runMemberAction(member.id, { type: 'CLOCK_TOGGLE', userId: member.id, clockedIn: !Boolean(member.clockedIn) }, 'Attendance could not be updated.');
   };
 
   return <>

@@ -1,5 +1,5 @@
-import { createDemoState } from './data';
-import { makeId, normalizeClothingSales, normalizeNotifications, notificationRelatesToUser } from './helpers';
+import { createEmptyState } from './data';
+import { makeId, normalizeClothingSales, normalizeNotifications, notificationRelatesToUser, orderBalance } from './helpers';
 import type { Activity, AppAction, AppNotification, AppState, Order } from './types';
 
 const activity = (state: AppState, values: Omit<Activity, 'id' | 'at'>): Activity => ({
@@ -53,6 +53,7 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
     case 'SET_BRANCH':
       return { ...state, activeBranchId: action.branchId };
     case 'CREATE_ORDER': {
+      if (state.orders.some((order) => order.id === action.order.id || order.number === action.order.number)) return state;
       const creator = state.users.find((user) => user.id === state.activeUserId);
       const incomingOrder = creator?.role === 'staff' ? { ...action.order, assignedStaffId: creator.id } : action.order;
       const actorUserId = creator?.id ?? incomingOrder.events[0]?.byUserId ?? 'user-admin';
@@ -117,7 +118,21 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
     }
     case 'ADD_PAYMENT': {
       const order = state.orders.find((item) => item.id === action.payment.orderId);
-      if (!order) return state;
+      const amount = action.payment.amount;
+      const balance = order ? orderBalance(state, order) : 0;
+      const comparisonTolerance = Number.EPSILON * Math.max(Math.abs(amount), Math.abs(balance)) * 8;
+      if (
+        !order
+        || typeof action.payment.id !== 'string'
+        || !action.payment.id.trim()
+        || state.payments.some((payment) => payment.id === action.payment.id)
+        || typeof amount !== 'number'
+        || !Number.isFinite(amount)
+        || amount <= 0
+        || amount > 1_000_000
+        || Math.abs(amount - Number(amount.toFixed(2))) > 1e-9
+        || (amount > balance && amount - balance > comparisonTolerance)
+      ) return state;
       return {
         ...state,
         payments: [action.payment, ...state.payments],
@@ -125,6 +140,7 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
       };
     }
     case 'CREATE_PICKUP':
+      if (state.pickupRequests.some((request) => request.id === action.request.id)) return state;
       return {
         ...state,
         pickupRequests: [action.request, ...state.pickupRequests],
@@ -141,14 +157,15 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
     }
     case 'ADJUST_INVENTORY': {
       const item = state.inventory.find((entry) => entry.id === action.itemId);
-      if (!item) return state;
+      if (!item || !Number.isFinite(action.delta) || action.delta === 0 || item.quantity + action.delta < 0) return state;
       return {
         ...state,
-        inventory: state.inventory.map((entry) => entry.id === action.itemId ? { ...entry, quantity: Math.max(0, entry.quantity + action.delta) } : entry),
+        inventory: state.inventory.map((entry) => entry.id === action.itemId ? { ...entry, quantity: entry.quantity + action.delta } : entry),
         activities: [activity(state, { branchId: item.branchId, userId: action.userId, message: `${action.delta > 0 ? 'added' : 'used'} ${Math.abs(action.delta)} ${item.unit} of ${item.name}`, kind: 'inventory' }), ...state.activities],
       };
     }
     case 'CREATE_CLOTHING_ITEM':
+      if (state.clothingItems.some((item) => item.id === action.item.id || item.sku.toLowerCase() === action.item.sku.toLowerCase())) return state;
       return { ...state, clothingItems: [action.item, ...(state.clothingItems ?? [])] };
     case 'UPDATE_CLOTHING_ITEM':
       return {
@@ -157,10 +174,10 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
       };
     case 'ADJUST_CLOTHING_STOCK': {
       const item = (state.clothingItems ?? []).find((entry) => entry.id === action.itemId);
-      if (!item || !Number.isInteger(action.delta)) return state;
+      if (!item || !Number.isInteger(action.delta) || action.delta === 0 || item.quantity + action.delta < 0) return state;
       return {
         ...state,
-        clothingItems: state.clothingItems.map((entry) => entry.id === item.id ? { ...entry, quantity: Math.max(0, entry.quantity + action.delta) } : entry),
+        clothingItems: state.clothingItems.map((entry) => entry.id === item.id ? { ...entry, quantity: entry.quantity + action.delta } : entry),
         activities: [activity(state, {
           branchId: item.branchId,
           userId: action.userId,
@@ -174,6 +191,7 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
       const unitPrice = action.sale.unitPrice;
       if (
         !item
+        || state.clothingSales.some((sale) => sale.id === action.sale.id)
         || !Number.isInteger(action.sale.quantity)
         || action.sale.quantity < 1
         || action.sale.quantity > item.quantity
@@ -204,8 +222,9 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
     }
     case 'CLOCK_TOGGLE': {
       const user = state.users.find((item) => item.id === action.userId);
-      if (!user) return state;
-      const clockedIn = !user.clockedIn;
+      if (!user || (action.clockedIn !== undefined && typeof action.clockedIn !== 'boolean')) return state;
+      const clockedIn = typeof action.clockedIn === 'boolean' ? action.clockedIn : !Boolean(user.clockedIn);
+      if (Boolean(user.clockedIn) === clockedIn) return state;
       return {
         ...state,
         users: state.users.map((item) => item.id === action.userId ? { ...item, clockedIn, lastClockIn: clockedIn ? new Date().toISOString() : item.lastClockIn } : item),
@@ -213,12 +232,17 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
       };
     }
     case 'CREATE_CUSTOMER': {
+      const username = action.user.username?.trim().toLowerCase();
+      if (state.customers.some((customer) => customer.id === action.customer.id)
+        || state.users.some((user) => user.id === action.user.id || (username && user.username?.trim().toLowerCase() === username))) return state;
       const { password: _password, ...user } = action.user;
       return { ...state, customers: [action.customer, ...state.customers], users: [{ ...user, verified: false, active: true }, ...state.users] };
     }
     case 'CREATE_BRANCH':
+      if (state.branches.some((branch) => branch.id === action.branch.id)) return state;
       return { ...state, branches: [action.branch, ...state.branches] };
     case 'CREATE_SERVICE':
+      if (state.services.some((service) => service.id === action.service.id)) return state;
       return { ...state, services: [action.service, ...state.services] };
     case 'UPDATE_BRANCH': {
       const target = state.branches.find((branch) => branch.id === action.branchId);
@@ -349,8 +373,8 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
           : item),
       };
     }
-    case 'RESET_DEMO':
-      return createDemoState();
+    case 'CLEAR_LOCAL_STATE':
+      return createEmptyState();
     default:
       return state;
   }

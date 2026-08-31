@@ -52,7 +52,11 @@ function CustomersView() {
     }
 
     const customerId = makeId('customer');
-    const branchId = state.activeBranchId === 'all' ? state.branches[0].id : state.activeBranchId;
+    const branchId = state.activeBranchId === 'all' ? state.branches.find((branch) => branch.active)?.id ?? '' : state.activeBranchId;
+    if (!branchId) {
+      setError('Create an active branch before adding a customer.');
+      return;
+    }
     const values = Object.fromEntries(Object.entries(measurements).filter(([, value]) => value !== '').map(([key, value]) => [key, Number(value)]));
     const action = {
       type: 'CREATE_CUSTOMER' as const,

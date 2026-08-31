@@ -245,6 +245,7 @@ export type DailyOperationsSummary = {
 
 export type AppState = {
   version: number;
+  dataRevision: number;
   activeUserId: string | null;
   activeBranchId: string;
   branches: Branch[];
@@ -277,7 +278,7 @@ export type AppAction =
   | { type: 'UPDATE_CLOTHING_ITEM'; itemId: string; updates: ClothingItemUpdate }
   | { type: 'ADJUST_CLOTHING_STOCK'; itemId: string; delta: number; userId: string }
   | { type: 'RECORD_CLOTHING_SALE'; sale: ClothingSale }
-  | { type: 'CLOCK_TOGGLE'; userId: string }
+  | { type: 'CLOCK_TOGGLE'; userId: string; clockedIn?: boolean }
   | { type: 'CREATE_CUSTOMER'; customer: Customer; user: User }
   | { type: 'CREATE_BRANCH'; branch: Branch }
   | { type: 'CREATE_SERVICE'; service: Service }
@@ -290,4 +291,4 @@ export type AppAction =
   | { type: 'RESTORE_STAFF'; userId: string; branchIds?: string[]; password?: string }
   | { type: 'UPDATE_STAFF_BRANCHES'; userId: string; branchIds: string[] }
   | { type: 'MARK_ALL_NOTIFICATIONS_READ' }
-  | { type: 'RESET_DEMO' };
+  | { type: 'CLEAR_LOCAL_STATE' };
