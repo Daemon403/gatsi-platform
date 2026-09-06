@@ -1,6 +1,6 @@
 import { appReducer, createEmptyState, DATA_REVISION, type AppAction, type AppState } from '@gatsi/domain';
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { ApiError, apiAction, apiLogout, apiState, canQueueOffline, clearSyncFailure, getCachedProjection, getPendingActionCount, getSyncSnapshot, handleOfflineStorageChange, hasApiSession, isNetworkError, isSessionStorageKey, setConnectivity, subscribeSync, syncPendingActions, type SyncSnapshot } from './api';
+import { ApiError, apiAction, apiLogout, apiState, automaticSyncDue, canQueueOffline, clearSyncFailure, getCachedProjection, getPendingActionCount, getSyncSnapshot, handleOfflineStorageChange, hasApiSession, isNetworkError, isSessionStorageKey, setConnectivity, setSynchronizationDeferred, subscribeSync, syncPendingActions, type SyncSnapshot } from './api';
 
 const STORAGE_KEY = 'gatsi-comms-web-state-v1';
 const withoutPasswords = (state: AppState): AppState => ({ ...state, users: state.users.map(({ password: _password, ...user }) => user) });
@@ -45,13 +45,17 @@ export function AppStoreProvider({ children }: React.PropsWithChildren) {
     localDispatch({ type: 'HYDRATE', state: empty });
   }, []);
 
-  const reconcile = useCallback(async () => {
+  const reconcile = useCallback(async (force = false) => {
     if (!hasApiSession()) {
       if (stateRef.current.activeUserId) resetWorkspace();
       return;
     }
     const userId = stateRef.current.activeUserId;
     if (!userId) return;
+    if (!force && !automaticSyncDue(stateRef.current.settings?.synchronizationMode ?? 'reconnect', userId)) {
+      setSynchronizationDeferred();
+      return;
+    }
     const expected = { userId, epoch: sessionEpochRef.current };
     try {
       const pending = getPendingActionCount(userId);
@@ -129,7 +133,11 @@ export function AppStoreProvider({ children }: React.PropsWithChildren) {
     window.addEventListener('offline', offline);
     window.addEventListener('storage', storage);
     document.addEventListener('visibilitychange', visible);
-    const timer = window.setInterval(() => { if (getSyncSnapshot().phase === 'offline' || getSyncSnapshot().pendingCount) void reconcile(); }, 30_000);
+    const timer = window.setInterval(() => {
+      const userId = stateRef.current.activeUserId;
+      const mode = stateRef.current.settings?.synchronizationMode ?? 'reconnect';
+      if (getSyncSnapshot().phase === 'offline' || getSyncSnapshot().pendingCount || (userId && mode === 'daily' && automaticSyncDue(mode, userId))) void reconcile();
+    }, 30_000);
     void reconcile();
     return () => {
       window.removeEventListener('online', online);
@@ -142,7 +150,7 @@ export function AppStoreProvider({ children }: React.PropsWithChildren) {
   useEffect(() => { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }, [state]);
   useEffect(() => { stateRef.current = state; }, [state]);
   useEffect(() => { if (state.activeUserId) void reconcile(); }, [state.activeUserId, reconcile]);
-  const syncNow = useCallback(async () => { clearSyncFailure(); await reconcile(); }, [reconcile]);
+  const syncNow = useCallback(async () => { clearSyncFailure(); await reconcile(true); }, [reconcile]);
   const value = useMemo(() => ({ state, dispatch, sync, syncNow }), [state, dispatch, sync, syncNow]);
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

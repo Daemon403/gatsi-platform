@@ -31,7 +31,7 @@ a { color: inherit; text-decoration: none; }
 svg { width: 19px; height: 19px; stroke-width: 2; }
 
 .app-shell { min-height: 100vh; }
-.sidebar { position: fixed; inset: 0 auto 0 0; z-index: 30; width: 264px; padding: 24px 18px 18px; background: #fff; border-right: 1px solid var(--line); display: flex; flex-direction: column; }
+.sidebar { position: fixed; inset: 0 auto 0 0; z-index: 30; width: 264px; padding: 24px 18px 18px; background: #fff; border-right: 1px solid var(--line); display: flex; flex-direction: column; overflow-y: auto; }
 .brand { display: flex; align-items: center; gap: 12px; padding: 0 7px 25px; }
 .brand-mark { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; color: #fff; background: linear-gradient(145deg, #12a963, var(--green-dark)); font-size: 23px; font-weight: 900; box-shadow: 0 9px 20px rgba(0, 141, 76, .18); }
 .brand div { display: flex; flex-direction: column; gap: 3px; }
@@ -778,6 +778,18 @@ a.notification-item:hover { background: var(--green-soft); }
 
 .profile-settings-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(300px, .65fr); gap: 18px; align-items: start; }
 .profile-settings-grid .profile-form-card { max-width: none; }
+.profile-sync-card { grid-column: 1 / -1; }
+.sync-mode-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 18px 0; }
+.sync-mode-options > button { appearance: none; width: 100%; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--ink); padding: 16px; display: flex; gap: 11px; align-items: flex-start; text-align: left; cursor: pointer; }
+.sync-mode-options > button:hover:not(:disabled), .sync-mode-options > button.selected { border-color: var(--green); background: var(--green-soft); }
+.sync-mode-options > button:disabled { cursor: wait; opacity: .7; }
+.sync-mode-options > button > span:last-child { display: grid; gap: 5px; }
+.sync-mode-options strong { font-size: 13px; }
+.sync-mode-options small, .sync-policy-readonly { color: var(--muted); font-size: 11px; line-height: 1.5; }
+.sync-mode-radio { width: 17px; height: 17px; flex: 0 0 17px; margin-top: 1px; border: 2px solid var(--subtle); border-radius: 50%; background: var(--surface); box-shadow: inset 0 0 0 3px var(--surface); }
+.sync-mode-options > button.selected .sync-mode-radio { border-color: var(--green); background: var(--green); }
+.sync-settings-status { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 18px; padding: 12px 14px; margin: 4px 0 16px; border-radius: 12px; background: #f6f8fb; color: var(--muted); font-size: 11px; }
+.sync-policy-readonly { margin: 18px 0; }
 .profile-admin-field { grid-column: 1 / -1; padding: 14px; border: 1px solid #b7ddc9; border-radius: 12px; background: var(--green-soft); }
 .profile-admin-field > span { display: flex; align-items: center; gap: 5px; margin-top: 8px; color: var(--green); font-size: 8px; font-weight: 850; }
 .profile-admin-field > span svg { width: 13px; }
@@ -864,6 +876,7 @@ a.notification-item:hover { background: var(--green-soft); }
 }
 
 @media (max-width: 680px) {
+  .sync-mode-options { grid-template-columns: 1fr; }
   .retail-grid, .retail-form-grid { grid-template-columns: 1fr; }
   .retail-form-grid .form-actions { flex-direction: column-reverse; }
   .retail-form-grid .form-actions .button { width: 100%; }

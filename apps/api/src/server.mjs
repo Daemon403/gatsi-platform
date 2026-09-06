@@ -19,7 +19,7 @@ const initialAdmin = {
   email: process.env.INITIAL_ADMIN_EMAIL || '',
   phone: process.env.INITIAL_ADMIN_PHONE || '',
 };
-const emptyState = { version: 1, dataRevision: 3, activeUserId: null, activeBranchId: 'all', branches: [], users: [], customers: [], services: [], orders: [], payments: [], pickupRequests: [], inventory: [], clothingItems: [], clothingSales: [], receipts: [], activities: [], notifications: [] };
+const emptyState = { version: 1, dataRevision: 3, settings: { synchronizationMode: 'reconnect' }, activeUserId: null, activeBranchId: 'all', branches: [], users: [], customers: [], services: [], orders: [], payments: [], pickupRequests: [], inventory: [], clothingItems: [], clothingSales: [], receipts: [], activities: [], notifications: [] };
 
 const nowPlus = (amount, unit) => new Date(Date.now() + amount * unit); const ipOf = (req) => String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
 const response = (res,status,body,origin) => { res.writeHead(status,{ 'content-type':'application/json; charset=utf-8','access-control-allow-origin':origin || '','access-control-allow-headers':'authorization,content-type,x-idempotency-key','access-control-allow-methods':'GET,POST,OPTIONS',vary:'Origin','x-content-type-options':'nosniff','referrer-policy':'no-referrer','cache-control':'no-store' }); res.end(JSON.stringify(body)); };
@@ -46,7 +46,7 @@ async function seed() { await transaction(async c => {
 }); }
 const normalizeNotifications = (value) => Array.isArray(value)?value.filter(item=>item&&typeof item==='object'&&typeof item.id==='string'&&typeof item.title==='string'&&typeof item.message==='string'&&typeof item.at==='string').map(item=>({...item,recipientUserIds:Array.isArray(item.recipientUserIds)?item.recipientUserIds.filter(id=>typeof id==='string'):[],readByUserIds:Array.isArray(item.readByUserIds)?item.readByUserIds.filter(id=>typeof id==='string'):[]})).slice(0,500):[];
 const normalizeState = (state) => {
-  const normalized={...state,dataRevision:Number(state?.dataRevision||0),notifications:normalizeNotifications(state?.notifications),clothingItems:Array.isArray(state?.clothingItems)?state.clothingItems:[],clothingSales:normalizeClothingSales(state?.clothingSales),receipts:Array.isArray(state?.receipts)?state.receipts:[]};
+  const normalized={...state,dataRevision:Number(state?.dataRevision||0),settings:{synchronizationMode:state?.settings?.synchronizationMode==='daily'?'daily':'reconnect'},notifications:normalizeNotifications(state?.notifications),clothingItems:Array.isArray(state?.clothingItems)?state.clothingItems:[],clothingSales:normalizeClothingSales(state?.clothingSales),receipts:Array.isArray(state?.receipts)?state.receipts:[]};
   return {...normalized,receipts:ensureTransactionReceipts(normalized)};
 };
 const loadState = async (client=pool) => normalizeState((await client.query('SELECT payload FROM app_state WHERE singleton=true')).rows[0].payload);
@@ -176,6 +176,13 @@ async function mutate(user,action,req){
     const created=await createCustomerAccount(c,state,action.customer,action.user);
     inlineCustomerAccount=created;
     auditMetadata={branchId:created.customer.branchId,customerUserId:created.profile.id};auditEntityType='customer';auditEntityId=created.customer.id;
+  }
+  else if(action.type==='UPDATE_SYNC_SETTINGS'){
+    requireAdmin(user);
+    const synchronizationMode=action.synchronizationMode;
+    if(!['reconnect','daily'].includes(synchronizationMode))throw fail('Choose a valid synchronization schedule.');
+    state.settings={...state.settings,synchronizationMode};
+    auditMetadata={synchronizationMode};auditEntityType='workspace_settings';auditEntityId='synchronization';
   }
   else if(action.type==='CREATE_BRANCH'){
     requireAdmin(user);

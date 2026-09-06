@@ -25,7 +25,7 @@ export function AppHeader({ title, subtitle, back = false, showNotifications = t
       ? `Syncing${sync.pendingCount ? ` ${sync.pendingCount}` : ''}`
       : sync.phase === 'error'
         ? 'Sync issue'
-        : sync.pendingCount ? `${sync.pendingCount} pending` : '';
+        : sync.pendingCount ? `${sync.pendingCount} pending` : 'Synchronized';
 
   return (
     <View style={styles.header}>
@@ -43,14 +43,14 @@ export function AppHeader({ title, subtitle, back = false, showNotifications = t
             {user?.role === 'admin' ? <Feather name="chevron-down" size={14} color={colors.primary} /> : null}
           </TouchableOpacity>
         )}
-        {syncLabel ? <TouchableOpacity disabled={sync.phase === 'syncing'} onPress={() => {
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={`${syncLabel}. Synchronize now.`} disabled={sync.phase === 'syncing'} onPress={() => {
           if (sync.phase === 'error' && sync.lastError) {
             Alert.alert('Sync issue', `${sync.lastError}\n\nThe server version was restored for any rejected change.`, [{ text: 'Dismiss' }, { text: 'Try again', onPress: () => void syncNow() }]);
           } else void syncNow();
         }} style={[styles.syncRow, sync.phase === 'offline' && styles.syncOffline, sync.phase === 'error' && styles.syncError]}>
           <Feather name={sync.phase === 'offline' ? 'cloud-off' : sync.phase === 'error' ? 'alert-circle' : 'refresh-cw'} size={11} color={sync.phase === 'error' ? colors.red : sync.phase === 'offline' ? colors.amber : colors.primary} />
           <Text style={[styles.syncText, sync.phase === 'offline' && styles.syncTextOffline, sync.phase === 'error' && styles.syncTextError]}>{syncLabel}</Text>
-        </TouchableOpacity> : null}
+        </TouchableOpacity>
       </View>
       {showNotifications ? <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Notifications, ${unread.length} unread`} onPress={() => navigation.navigate('Notifications')} style={styles.squareButton}>
         <Feather name="bell" size={21} color={colors.ink} />

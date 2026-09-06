@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { appReducer, DATA_REVISION, type AppAction, type AppState, type DailyOperationsSummary } from '@gatsi/domain';
+import { appReducer, DATA_REVISION, operationsDateKey, type AppAction, type AppState, type DailyOperationsSummary, type SynchronizationMode } from '@gatsi/domain';
 import { Platform } from 'react-native';
 
 declare const process: { env: { EXPO_PUBLIC_API_URL?: string } };
@@ -14,6 +14,7 @@ const QUEUE_STORAGE = 'gatsi-comms-mobile-sync-v1';
 const SYNC_JOURNAL_STORAGE = 'gatsi-comms-mobile-sync-journal-v1';
 const MUTATION_FAILURE_STORAGE = 'gatsi-comms-mobile-mutation-failures-v1';
 const ONLINE_OPERATION_STORAGE = 'gatsi-comms-mobile-online-operation-v1';
+const SYNC_SUCCESS_STORAGE = 'gatsi-comms-mobile-sync-success-v1';
 const MAX_PENDING_ACTIONS = 250;
 const REQUEST_TIMEOUT_MS = 12_000;
 const ONLINE_OPERATION_TTL_MS = 24 * 60 * 60 * 1000;
@@ -26,7 +27,7 @@ type SyncJournal = { entryId: string; userId: string; confirmed: AppState; failu
 type OnlineOperation = { id: string; identity: string; action: AppAction; createdAt: string };
 type SessionContext = { epoch: number; sessionId: string; userId: string };
 export type SyncPhase = 'online' | 'offline' | 'syncing' | 'error';
-export type SyncSnapshot = { phase: SyncPhase; pendingCount: number; lastError?: string };
+export type SyncSnapshot = { phase: SyncPhase; pendingCount: number; lastError?: string; lastSyncedAt?: string };
 
 export class ApiError extends Error {
   constructor(message: string, public readonly status?: number, public readonly network = false) {
@@ -42,6 +43,24 @@ let sessionEpoch = 0;
 let storageLock: Promise<void> = Promise.resolve();
 let queueLock: Promise<void> = Promise.resolve();
 let storedFailureNotice: StoredMutationFailure | undefined;
+
+const readSyncSuccesses = async (): Promise<Record<string, string>> => {
+  try {
+    const value = JSON.parse(await AsyncStorage.getItem(SYNC_SUCCESS_STORAGE) ?? '{}') as Record<string, string>;
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? Object.fromEntries(Object.entries(value).filter(([userId, timestamp]) => userId && typeof timestamp === 'string' && Number.isFinite(Date.parse(timestamp))))
+      : {};
+  } catch {
+    return {};
+  }
+};
+
+const lastSuccessfulSync = async (userId?: string | null) => userId ? (await readSyncSuccesses())[userId] : undefined;
+const recordSuccessfulSync = async (userId: string) => {
+  const lastSyncedAt = new Date().toISOString();
+  try { await AsyncStorage.setItem(SYNC_SUCCESS_STORAGE, JSON.stringify({ ...await readSyncSuccesses(), [userId]: lastSyncedAt })); } catch { /* scheduling safely defaults to another attempt */ }
+  publish({ lastSyncedAt });
+};
 
 const withStorageLock = async <T,>(work: () => Promise<T>) => {
   let result!: T;
@@ -209,6 +228,7 @@ const updateQueue = async (update: (queue: PendingMutation[]) => PendingMutation
 };
 
 void activePendingCount().then((pendingCount) => publish({ pendingCount }));
+void storedActiveUserId().then(async (userId) => publish({ lastSyncedAt: await lastSuccessfulSync(userId) }));
 void Promise.all([storedActiveUserId(), readMutationFailures()]).then(([userId, storedFailures]) => {
   const failure = storedFailures.find((item) => item.userId === userId && !item.dismissed);
   if (failure) {
@@ -225,6 +245,12 @@ export const subscribeSync = (listener: (value: SyncSnapshot) => void) => {
   return () => { listeners.delete(listener); };
 };
 export const setConnectivity = (online: boolean) => publish({ phase: online ? storedFailureNotice ? 'error' : snapshot.pendingCount ? 'syncing' : 'online' : 'offline', lastError: online ? storedFailureNotice?.message : undefined });
+export const setSynchronizationDeferred = () => publish({ phase: snapshot.phase === 'offline' ? 'offline' : 'online' });
+export const automaticSyncDue = async (mode: SynchronizationMode, userId: string, now = new Date()) => {
+  if (mode === 'reconnect') return true;
+  const lastSyncedAt = await lastSuccessfulSync(userId);
+  return !lastSyncedAt || operationsDateKey(lastSyncedAt) !== operationsDateKey(now);
+};
 export const clearSyncFailure = async () => {
   const wasOffline = snapshot.phase === 'offline';
   try {
@@ -367,6 +393,7 @@ const acceptRemote = async (remote: AppState, cached: AppState | undefined, cont
     const [queue, journal] = await Promise.all([readQueue(), readSyncJournal()]);
     const projected = applyQueue(confirmed, queue, journal?.entryId);
     await persistCachedState(projected);
+    await recordSuccessfulSync(context.userId);
     return projected;
   });
 
@@ -387,6 +414,7 @@ const commitQueuedRemote = async (entry: PendingMutation, remote: AppState, cach
   await AsyncStorage.removeItem(SYNC_JOURNAL_STORAGE);
   const projected = applyQueue(confirmed, remaining, entry.id);
   await persistCachedState(projected);
+  await recordSuccessfulSync(context.userId);
   publish({ pendingCount: await activePendingCount(remaining, context.userId) });
   return projected;
 });
@@ -602,6 +630,11 @@ export async function apiAction(action: AppAction, optimisticBase?: AppState): P
     return optimistic;
   }
 
+  if (!await automaticSyncDue(cached.settings?.synchronizationMode ?? 'reconnect', userId)) {
+    setSynchronizationDeferred();
+    return optimistic;
+  }
+
   const result = await syncPendingActions() ?? optimistic;
   const failure = failures.get(entry.id) ?? await mutationFailure(entry.id);
   if (failure) {
@@ -631,6 +664,7 @@ export async function apiLogin(username: string, password: string) {
     await persistConfirmedState(remote);
     await persistCachedState(remote);
   });
+  if (remote.activeUserId) await recordSuccessfulSync(remote.activeUserId);
   publish({ phase: 'online', pendingCount: 0, lastError: undefined });
   return remote;
 }

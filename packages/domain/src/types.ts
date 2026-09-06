@@ -1,5 +1,11 @@
 export type Role = 'admin' | 'staff' | 'customer';
 
+export type SynchronizationMode = 'reconnect' | 'daily';
+
+export type WorkspaceSettings = {
+  synchronizationMode: SynchronizationMode;
+};
+
 export type OrderStatus =
   | 'received'
   | 'sorting'
@@ -285,6 +291,7 @@ export type DailyOperationsSummary = {
 export type AppState = {
   version: number;
   dataRevision: number;
+  settings: WorkspaceSettings;
   activeUserId: string | null;
   activeBranchId: string;
   branches: Branch[];
@@ -326,6 +333,7 @@ export type AppAction =
   | { type: 'UPDATE_SERVICE'; serviceId: string; updates: ServiceUpdate }
   | { type: 'UPDATE_CUSTOMER'; customerId: string; updates: CustomerUpdate }
   | { type: 'UPDATE_PROFILE'; updates: ProfileUpdate }
+  | { type: 'UPDATE_SYNC_SETTINGS'; synchronizationMode: SynchronizationMode }
   | { type: 'CREATE_STAFF'; user: User }
   | { type: 'ARCHIVE_STAFF'; userId: string }
   | { type: 'RESTORE_STAFF'; userId: string; branchIds?: string[]; password?: string }

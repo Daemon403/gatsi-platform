@@ -16,6 +16,10 @@ Migration `009_transaction_receipts.sql` adds the receipt collection and advance
 
 `GET /api/admin/operations-summaries/current` calculates today's Africa/Harare order, service-payment and store-transaction totals directly from the latest `app_state` row. It is read-only and does not replace or create a permanent daily snapshot. Web and mobile refresh it once per minute while the reporting view is open and retain an immediate calculation from the authenticated local cache for offline visibility. The scheduled completed-day workflow remains the authoritative historical record.
 
+## Synchronization scheduling
+
+The administrator-owned `settings.synchronizationMode` value is stored in PostgreSQL with the workspace state and is shared with every role-scoped client. `reconnect` preserves immediate online mutation delivery and replays queued changes whenever connectivity returns. `daily` synchronizes on the first successful online use of each Africa/Harare day, then keeps later queueable operational changes on that device until the next day or a user chooses **Synchronize now**. Each device stores only its per-user last-success timestamp locally; the business setting and synchronized records remain database-backed. Account, security, and other online-only administration actions continue to require the API immediately.
+
 ## Backups and restoration
 
 GitHub Actions creates a nightly custom-format `pg_dump` retained for 30 days once `PRODUCTION_DATABASE_URL` is configured in the protected GitHub production environment. Keep Neon restore protection enabled for the production branch. Test restoration quarterly in an isolated database:

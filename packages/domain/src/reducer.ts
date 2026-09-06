@@ -38,6 +38,7 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
       if (action.state.version !== state.version) return state;
       const hydrated = {
           ...action.state,
+          settings: { synchronizationMode: action.state.settings?.synchronizationMode === 'daily' ? 'daily' as const : 'reconnect' as const },
           notifications: normalizeNotifications(action.state.notifications),
           clothingItems: Array.isArray(action.state.clothingItems) ? action.state.clothingItems : [],
           clothingSales: normalizeClothingSales(action.state.clothingSales),
@@ -293,6 +294,9 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
           : state.customers,
       };
     }
+    case 'UPDATE_SYNC_SETTINGS':
+      if (!['reconnect', 'daily'].includes(action.synchronizationMode)) return state;
+      return { ...state, settings: { ...state.settings, synchronizationMode: action.synchronizationMode } };
     case 'CREATE_STAFF': {
       const { password: _password, ...incoming } = action.user;
       const user = { ...incoming, role: 'staff' as const, active: true, verified: true, clockedIn: false };

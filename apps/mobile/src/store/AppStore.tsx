@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { appReducer, createEmptyState, DATA_REVISION, type AppAction, type AppState } from '@gatsi/domain';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { AppState as NativeAppState } from 'react-native';
-import { ApiError, apiAction, apiLogout, apiState, canQueueOffline, clearSyncFailure, getCachedProjection, getPendingActionCount, getSyncSnapshot, hasApiSession, isNetworkError, setConnectivity, subscribeSync, syncPendingActions, type SyncSnapshot } from './api';
+import { ApiError, apiAction, apiLogout, apiState, automaticSyncDue, canQueueOffline, clearSyncFailure, getCachedProjection, getPendingActionCount, getSyncSnapshot, hasApiSession, isNetworkError, setConnectivity, setSynchronizationDeferred, subscribeSync, syncPendingActions, type SyncSnapshot } from './api';
 
 const STORAGE_KEY = 'gatsi-comms-state-v1';
 const withoutPasswords = (state: AppState): AppState => ({ ...state, users: state.users.map(({ password: _password, ...user }) => user) });
@@ -49,13 +49,17 @@ export function AppStoreProvider({ children }: React.PropsWithChildren) {
     localDispatch({ type: 'HYDRATE', state: empty });
   }, []);
 
-  const reconcile = useCallback(async () => {
+  const reconcile = useCallback(async (force = false) => {
     if (!(await hasApiSession())) {
       if (stateRef.current.activeUserId) resetWorkspace();
       return;
     }
     const userId = stateRef.current.activeUserId;
     if (!userId) return;
+    if (!force && !await automaticSyncDue(stateRef.current.settings?.synchronizationMode ?? 'reconnect', userId)) {
+      setSynchronizationDeferred();
+      return;
+    }
     const expected = { userId, epoch: sessionEpochRef.current };
     try {
       const pending = await getPendingActionCount(userId);
@@ -138,7 +142,13 @@ export function AppStoreProvider({ children }: React.PropsWithChildren) {
   useEffect(() => subscribeSync(setSync), []);
   useEffect(() => {
     const subscription = NativeAppState.addEventListener('change', (next) => { if (next === 'active') void reconcile(); });
-    const timer = setInterval(() => { if (getSyncSnapshot().phase === 'offline' || getSyncSnapshot().pendingCount) void reconcile(); }, 30_000);
+    const timer = setInterval(() => {
+      const userId = stateRef.current.activeUserId;
+      const mode = stateRef.current.settings?.synchronizationMode ?? 'reconnect';
+      void (async () => {
+        if (getSyncSnapshot().phase === 'offline' || getSyncSnapshot().pendingCount || (userId && mode === 'daily' && await automaticSyncDue(mode, userId))) await reconcile();
+      })();
+    }, 30_000);
     return () => { subscription.remove(); clearInterval(timer); };
   }, [reconcile]);
 
@@ -148,7 +158,7 @@ export function AppStoreProvider({ children }: React.PropsWithChildren) {
   useEffect(() => { stateRef.current = state; }, [state]);
   useEffect(() => { if (state.activeUserId) void reconcile(); }, [state.activeUserId, reconcile]);
 
-  const syncNow = useCallback(async () => { await clearSyncFailure(); await reconcile(); }, [reconcile]);
+  const syncNow = useCallback(async () => { await clearSyncFailure(); await reconcile(true); }, [reconcile]);
   const value = useMemo(() => ({ state, dispatch, hydrated, sync, syncNow }), [state, dispatch, hydrated, sync, syncNow]);
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

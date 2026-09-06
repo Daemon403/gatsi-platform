@@ -47,7 +47,7 @@ export function OperationsSummaryPage() {
 }
 
 function AdminOperationsSummaryPage() {
-  const { state } = useAppStore();
+  const { state, sync } = useAppStore();
   const localLive = useMemo(() => buildLiveOperationsSummary(state), [state]);
   const [live, setLive] = useState(localLive);
   const [liveSource, setLiveSource] = useState<'database' | 'device'>('device');
@@ -67,6 +67,13 @@ function AdminOperationsSummaryPage() {
   const refreshLive = useCallback(async (showProgress = true) => {
     if (showProgress) setRefreshingLive(true);
     setLiveError('');
+    if (sync.pendingCount) {
+      setLive(localLive);
+      setLiveSource('device');
+      setLiveError(`${sync.pendingCount} local ${sync.pendingCount === 1 ? 'change is' : 'changes are'} waiting to synchronize, so this summary includes the newer device data.`);
+      if (showProgress) setRefreshingLive(false);
+      return;
+    }
     try {
       const { summary } = await apiCurrentOperationsSummary();
       setLive(summary);
@@ -76,7 +83,7 @@ function AdminOperationsSummaryPage() {
     } finally {
       if (showProgress) setRefreshingLive(false);
     }
-  }, []);
+  }, [localLive, sync.pendingCount]);
 
   useEffect(() => {
     void refreshLive(false);
@@ -115,7 +122,7 @@ function AdminOperationsSummaryPage() {
       actions={<><Button variant="secondary" disabled={refreshingLive} onClick={() => void refreshLive()}><RefreshCw className={refreshingLive ? 'spinning' : ''} /> {refreshingLive ? 'Refreshing…' : 'Refresh today'}</Button><Button disabled={generating} onClick={() => void generateLatest()}><CalendarDays /> {generating ? 'Generating…' : 'Save latest completed day'}</Button></>}
     />
 
-    <div className="operations-live-heading"><div><span><Radio /> Live</span><h2>Today so far</h2><p>Automatically refreshed every minute from the database while this page is open.</p></div><small>{liveSource === 'database' ? 'Database live' : 'Device snapshot'} · Updated {generatedTime(live.generatedAt)} CAT</small></div>
+    <div className="operations-live-heading"><div><span><Radio /> Live</span><h2>Today so far</h2><p>{sync.pendingCount ? 'Includes queued device changes; synchronize to publish them to the database.' : 'Automatically refreshed every minute from the database while this page is open.'}</p></div><small>{liveSource === 'database' ? 'Database live' : 'Device snapshot'} · Updated {generatedTime(live.generatedAt)} CAT</small></div>
     {liveError ? <div className="operations-live-note" role="status">{liveError}</div> : null}
     <SummaryCard summary={live} live />
 

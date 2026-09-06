@@ -53,7 +53,7 @@ export function OperationsSummariesScreen() {
 }
 
 function AdminOperationsSummaries() {
-  const { state } = useAppStore();
+  const { state, sync } = useAppStore();
   const localLive = useMemo(() => buildLiveOperationsSummary(state), [state]);
   const [live, setLive] = useState(localLive);
   const [liveSource, setLiveSource] = useState<'database' | 'device'>('device');
@@ -65,6 +65,7 @@ function AdminOperationsSummaries() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
   const [liveError, setLiveError] = useState('');
+  const [liveNotice, setLiveNotice] = useState('');
   const summaries = useMemo(() => [...items].sort((left, right) => (
     right.date.localeCompare(left.date) || right.generatedAt.localeCompare(left.generatedAt)
   )), [items]);
@@ -79,6 +80,14 @@ function AdminOperationsSummaries() {
   const refreshLive = useCallback(async (showProgress = true) => {
     if (showProgress) setRefreshingLive(true);
     setLiveError('');
+    setLiveNotice('');
+    if (sync.pendingCount) {
+      setLive(localLive);
+      setLiveSource('device');
+      setLiveNotice(`${sync.pendingCount} local ${sync.pendingCount === 1 ? 'change is' : 'changes are'} waiting to synchronize, so this summary includes the newer device data.`);
+      if (showProgress) setRefreshingLive(false);
+      return;
+    }
     try {
       const response = await apiCurrentOperationsSummary();
       setLive(response.summary);
@@ -88,7 +97,7 @@ function AdminOperationsSummaries() {
     } finally {
       if (showProgress) setRefreshingLive(false);
     }
-  }, []);
+  }, [localLive, sync.pendingCount]);
 
   const load = async (asRefresh = false) => {
     if (asRefresh) setRefreshing(true);
@@ -142,7 +151,7 @@ function AdminOperationsSummaries() {
         <View style={styles.generationIcon}><Feather name="activity" size={22} color={colors.primary} /></View>
         <View style={styles.flex}>
           <Text style={styles.generationTitle}>Today is always available</Text>
-          <Text style={styles.generationBody}>Order and transaction totals refresh from the database every minute. If offline, the latest device snapshot remains visible.</Text>
+          <Text style={styles.generationBody}>{sync.pendingCount ? 'The summary includes queued device changes. Synchronize to publish them to the database.' : 'Order and transaction totals refresh from the database every minute. If offline, the latest device snapshot remains visible.'}</Text>
         </View>
       </View>
       <PrimaryButton title="Refresh today now" icon="refresh-cw" loading={refreshingLive} onPress={() => void refreshLive()} />
@@ -150,6 +159,7 @@ function AdminOperationsSummaries() {
     </Card>
 
     {liveError ? <ErrorNotice message={`${liveError} Showing the latest device snapshot.`} /> : null}
+    {liveNotice ? <Card style={styles.liveNotice}><Feather name="upload-cloud" size={18} color={colors.amber} /><Text style={styles.liveNoticeText}>{liveNotice}</Text></Card> : null}
     {error ? <ErrorNotice message={error} retry={!items.length ? () => void load() : undefined} /> : null}
 
     {loading ? <Card style={styles.loadingCard}><View style={styles.loadingIcon}><Feather name="bar-chart-2" size={25} color={colors.primary} /></View><Text style={styles.loadingTitle}>Loading operations summaries...</Text></Card> : null}
@@ -322,6 +332,8 @@ const styles = StyleSheet.create({
   alertPillText: { color: colors.primary, fontSize: 8, fontWeight: '900' },
   alertPillTextActive: { color: colors.red },
   errorNotice: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, marginBottom: 10, borderColor: colors.red, backgroundColor: colors.redSoft },
+  liveNotice: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, marginBottom: 10, borderColor: colors.amber, backgroundColor: colors.amberSoft },
+  liveNoticeText: { flex: 1, color: colors.amber, fontSize: 10, lineHeight: 15, fontWeight: '700' },
   errorText: { flex: 1, color: colors.red, fontSize: 10, lineHeight: 15, fontWeight: '700' },
   retryText: { color: colors.red, fontSize: 10, fontWeight: '900' },
 });

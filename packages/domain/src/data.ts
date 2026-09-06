@@ -34,6 +34,7 @@ export const statusLabels: Record<OrderStatus, string> = {
 export const createEmptyState = (): AppState => ({
   version: 1,
   dataRevision: DATA_REVISION,
+  settings: { synchronizationMode: 'reconnect' },
   activeUserId: null,
   activeBranchId: 'all',
   branches: [],
