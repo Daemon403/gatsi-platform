@@ -3,7 +3,8 @@ export type RootStackParamList = {
   OrderDetail: { orderId: string };
   CreateOrder: undefined;
   PickupRequest: undefined;
-  Receipt: { orderId: string };
+  Receipt: { receiptId: string };
+  Receipts: undefined;
   Team: undefined;
   Branches: undefined;
   ServicesManagement: undefined;

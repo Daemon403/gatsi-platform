@@ -181,8 +181,47 @@ export type ClothingSale = {
   listUnitPrice: number;
   unitPrice: number;
   total: number;
+  paymentMethod: PaymentMethod;
   soldAt: string;
   soldByUserId: string;
+};
+
+export type ReceiptKind = 'service' | 'store';
+
+export type ReceiptLine = {
+  id: string;
+  description: string;
+  detail?: string;
+  quantity: number;
+  listUnitPrice?: number;
+  unitPrice: number;
+  total: number;
+};
+
+export type TransactionReceipt = {
+  id: string;
+  number: string;
+  kind: ReceiptKind;
+  transactionId: string;
+  branchId: string;
+  branchName: string;
+  customerId?: string;
+  customerName: string;
+  customerPhone?: string;
+  orderId?: string;
+  orderNumber?: string;
+  issuedAt: string;
+  issuedByUserId: string;
+  issuedByName: string;
+  paymentMethod: PaymentMethod;
+  reference?: string;
+  lines: ReceiptLine[];
+  subtotal: number;
+  discount: number;
+  fees: number;
+  total: number;
+  amountPaid: number;
+  balanceAfter: number;
 };
 
 export type Activity = {
@@ -258,6 +297,7 @@ export type AppState = {
   inventory: InventoryItem[];
   clothingItems: ClothingItem[];
   clothingSales: ClothingSale[];
+  receipts: TransactionReceipt[];
   activities: Activity[];
   notifications: AppNotification[];
 };

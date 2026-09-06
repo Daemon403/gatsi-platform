@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildDailyOperationsSummary } from '../src/operations-summary.mjs';
+import { buildDailyOperationsSummary, getCurrentOperationsSummary } from '../src/operations-summary.mjs';
 
 test('daily money metrics remain exact when quantities create fractional cents', () => {
   const date = '2026-08-30';
@@ -35,4 +35,29 @@ test('daily money metrics remain exact when quantities create fractional cents',
   assert.equal(summary.totals.revenueCollected, 0.01);
   assert.equal(summary.totals.outstandingBalance, 0.01);
   assert.equal(summary.totals.clothingRevenue, 0.3);
+});
+
+test('current summary is calculated on demand without storing a daily snapshot', async () => {
+  const now = new Date('2026-09-06T09:15:00.000Z');
+  const queries = [];
+  const client = {
+    async query(sql) {
+      queries.push(sql);
+      if (sql.startsWith('SELECT payload')) return { rows: [{ payload: {
+        branches: [{ id: 'branch-1', name: 'Main' }],
+        users: [], inventory: [], clothingItems: [], activities: [], pickupRequests: [], clothingSales: [],
+        orders: [{ id: 'order-1', branchId: 'branch-1', createdAt: '2026-09-06T08:00:00.000+02:00', status: 'received', priority: 'normal', items: [{ quantity: 1, unitPrice: 10 }], discount: 0, deliveryFee: 0 }],
+        payments: [{ id: 'payment-1', orderId: 'order-1', amount: 4, paidAt: '2026-09-06T09:00:00.000+02:00' }],
+      }, updated_at: now }] };
+      return { rows: [{ window_start: new Date('2026-09-05T22:00:00.000Z'), window_end: new Date('2026-09-06T22:00:00.000Z') }] };
+    },
+  };
+  const summary = await getCurrentOperationsSummary(client, now);
+  assert.equal(summary.id, 'operations-summary-live-2026-09-06');
+  assert.equal(summary.windowEnd, now.toISOString());
+  assert.equal(summary.totals.ordersCreated, 1);
+  assert.equal(summary.totals.paymentsRecorded, 1);
+  assert.equal(summary.totals.revenueCollected, 4);
+  assert.equal(queries.length, 2);
+  assert.ok(queries.every((sql) => sql.trimStart().startsWith('SELECT')));
 });

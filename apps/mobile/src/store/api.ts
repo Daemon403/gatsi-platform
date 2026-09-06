@@ -677,6 +677,10 @@ export const apiOperationsSummaries = async () => {
   const context = await captureContext();
   return raw<OperationsSummariesResponse>('/admin/operations-summaries', undefined, true, context?.sessionId);
 };
+export const apiCurrentOperationsSummary = async () => {
+  const context = await captureContext();
+  return raw<GenerateOperationsSummaryResponse>('/admin/operations-summaries/current', undefined, true, context?.sessionId);
+};
 export const apiGenerateOperationsSummary = async (date?: string) => {
   const context = await captureContext();
   return raw<GenerateOperationsSummaryResponse>('/admin/operations-summaries/generate', { method: 'POST', body: JSON.stringify(date ? { date } : {}) }, true, context?.sessionId);

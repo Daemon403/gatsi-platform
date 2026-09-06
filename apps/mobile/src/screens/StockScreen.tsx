@@ -1,5 +1,5 @@
 import { Feather } from '@expo/vector-icons';
-import { getActiveUser, money, orderPaid, orderTotal, shortDate, visibleOrders } from '@gatsi/domain';
+import { dateTime, getActiveUser, money, visibleReceipts } from '@gatsi/domain';
 import { useNavigation } from '@react-navigation/native';
 import React, { useState } from 'react';
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -70,18 +70,17 @@ function InventoryView() {
 function ReceiptsView() {
   const { state } = useAppStore();
   const navigation = useNavigation<any>();
-  const paidOrders = visibleOrders(state).filter((order) => orderPaid(state, order.id) > 0);
+  const receipts = visibleReceipts(state);
   return <Screen>
-    <AppHeader title="Receipts" subtitle="Payments and order history" />
-    {paidOrders.map((order) => {
-      const paid = orderPaid(state, order.id);
-      return <Card key={order.id} style={styles.receiptCard}>
-        <View style={styles.receiptIcon}><Feather name="file-text" size={22} color={colors.primary} /></View>
-        <View style={styles.flex}><Text style={styles.receiptNumber}>{order.number}</Text><Text style={styles.receiptMeta}>{shortDate(order.createdAt)} · {order.items.length} service line{order.items.length === 1 ? '' : 's'}</Text><Text style={styles.receiptAmount}>{money(paid)} paid <Text style={styles.receiptTotal}>/ {money(orderTotal(order))}</Text></Text></View>
-        <TouchableOpacity accessibilityLabel={`Open receipt ${order.number}`} onPress={() => navigation.navigate('Receipt', { orderId: order.id })} style={styles.receiptOpen}><Feather name="chevron-right" size={20} color={colors.primary} /></TouchableOpacity>
+    <AppHeader title="Receipts" subtitle="One receipt for every payment" />
+    {receipts.map((receipt) => {
+      return <Card key={receipt.id} style={styles.receiptCard}>
+        <View style={styles.receiptIcon}><Feather name={receipt.kind === 'store' ? 'shopping-bag' : 'file-text'} size={22} color={colors.primary} /></View>
+        <View style={styles.flex}><Text style={styles.receiptNumber}>{receipt.number}</Text><Text style={styles.receiptMeta}>{receipt.orderNumber ?? 'Store sale'} · {dateTime(receipt.issuedAt)}</Text><Text style={styles.receiptAmount}>{money(receipt.amountPaid)} paid · {receipt.paymentMethod.replaceAll('_', ' ')}</Text></View>
+        <TouchableOpacity accessibilityLabel={`Open receipt ${receipt.number}`} onPress={() => navigation.navigate('Receipt', { receiptId: receipt.id })} style={styles.receiptOpen}><Feather name="chevron-right" size={20} color={colors.primary} /></TouchableOpacity>
       </Card>;
     })}
-    {!paidOrders.length ? <EmptyState icon="file-text" title="No receipts yet" body="Receipts appear here as soon as a payment is recorded." /> : null}
+    {!receipts.length ? <EmptyState icon="file-text" title="No receipts yet" body="Receipts appear here as soon as a payment is recorded." /> : null}
   </Screen>;
 }
 

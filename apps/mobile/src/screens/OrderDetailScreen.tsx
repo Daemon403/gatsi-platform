@@ -1,5 +1,5 @@
 import { Feather } from '@expo/vector-icons';
-import { dateTime, getActiveUser, money, nextStatus, orderBalance, orderPaid, orderSubtotal, orderTotal, shortDate, statusLabels, statusSequence, makeId, type PaymentMethod } from '@gatsi/domain';
+import { dateTime, getActiveUser, money, nextStatus, orderBalance, orderPaid, orderSubtotal, orderTotal, receiptIdForTransaction, shortDate, statusLabels, statusSequence, makeId, type PaymentMethod } from '@gatsi/domain';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import React, { useState } from 'react';
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -8,6 +8,7 @@ import { Screen } from '../components/Screen';
 import { Card, Input, PrimaryButton, SectionTitle, StatusPill } from '../components/ui';
 import { RootStackParamList } from '../navigation/types';
 import { useAppStore } from '../store/AppStore';
+import { apiAction } from '../store/api';
 import { colors, radius } from '../theme';
 
 const methods: PaymentMethod[] = ['cash', 'ecocash', 'card', 'bank_transfer'];
@@ -20,6 +21,9 @@ export function OrderDetailScreen() {
   const order = state.orders.find((item) => item.id === params.orderId);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [method, setMethod] = useState<PaymentMethod>('cash');
+  const [paymentReference, setPaymentReference] = useState('');
+  const [savingPayment, setSavingPayment] = useState(false);
+  const [paymentError, setPaymentError] = useState('');
   if (!order) return <Screen><AppHeader title="Order not found" back /></Screen>;
   const customer = state.customers.find((item) => item.id === order.customerId);
   const branch = state.branches.find((item) => item.id === order.branchId);
@@ -28,13 +32,26 @@ export function OrderDetailScreen() {
   const balance = orderBalance(state, order);
   const upcoming = nextStatus(order.status);
   const canAdvanceWorkflow = user.role === 'admin' || (user.role === 'staff' && order.assignedStaffId === user.id);
+  const orderReceipts = state.receipts.filter((receipt) => receipt.kind === 'service' && receipt.orderId === order.id);
 
-  const recordPayment = () => {
+  const recordPayment = async () => {
     const amount = Number(paymentAmount);
     if (!amount || amount <= 0 || amount > balance + 0.001) return Alert.alert('Check amount', `Enter an amount up to ${money(balance)}.`);
-    dispatch({ type: 'ADD_PAYMENT', payment: { id: makeId('payment'), orderId: order.id, amount, method, paidAt: new Date().toISOString(), receivedByUserId: user.id } });
-    setPaymentAmount('');
-    Alert.alert('Payment saved', `${money(amount)} was recorded for ${order.number}.`);
+    const payment = { id: makeId('payment'), orderId: order.id, amount, method, ...(paymentReference.trim() ? { reference: paymentReference.trim() } : {}), paidAt: new Date().toISOString(), receivedByUserId: user.id };
+    setSavingPayment(true);
+    setPaymentError('');
+    try {
+      const selectedBranchId = state.activeBranchId;
+      const remoteState = await apiAction({ type: 'ADD_PAYMENT', payment }, state);
+      dispatch({ type: 'HYDRATE', state: user.role === 'admin' ? { ...remoteState, activeBranchId: selectedBranchId } : remoteState });
+      setPaymentAmount('');
+      setPaymentReference('');
+      navigation.navigate('Receipt', { receiptId: receiptIdForTransaction('service', payment.id) });
+    } catch (reason) {
+      setPaymentError(reason instanceof Error ? reason.message : 'The payment could not be recorded.');
+    } finally {
+      setSavingPayment(false);
+    }
   };
 
   return (
@@ -95,11 +112,13 @@ export function OrderDetailScreen() {
           <Input label={`Amount (max ${money(balance)})`} icon="dollar-sign" keyboardType="decimal-pad" value={paymentAmount} onChangeText={setPaymentAmount} placeholder="0.00" />
           <Text style={styles.methodLabel}>Payment method</Text>
           <View style={styles.methods}>{methods.map((item) => <TouchableOpacity key={item} onPress={() => setMethod(item)} style={[styles.method, method === item && styles.methodActive]}><Text style={[styles.methodText, method === item && styles.methodTextActive]}>{item.replaceAll('_', ' ')}</Text></TouchableOpacity>)}</View>
-          <PrimaryButton title="Save payment" icon="check" onPress={recordPayment} />
+          <Input label="Reference (optional)" value={paymentReference} editable={!savingPayment} onChangeText={setPaymentReference} placeholder="Transaction or POS reference" />
+          {paymentError ? <Text style={styles.paymentError}>{paymentError}</Text> : null}
+          <PrimaryButton title="Save & view receipt" icon="file-text" loading={savingPayment} onPress={() => void recordPayment()} />
         </Card>
       </> : null}
 
-      {paid > 0 ? <View style={styles.receiptButton}><PrimaryButton secondary title="View receipt" icon="file-text" onPress={() => navigation.navigate('Receipt', { orderId: order.id })} /></View> : null}
+      {orderReceipts.length ? <View style={styles.receiptButton}><PrimaryButton secondary title={`View latest receipt (${orderReceipts.length})`} icon="file-text" onPress={() => navigation.navigate('Receipt', { receiptId: orderReceipts[0].id })} /></View> : null}
     </Screen>
   );
 }
@@ -114,5 +133,5 @@ const styles = StyleSheet.create({
   actionCard: { padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }, actionIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center' }, actionTitle: { color: colors.ink, fontSize: 14, fontWeight: '800' }, actionBody: { color: colors.muted, fontSize: 11, marginTop: 4 }, actionButton: { width: 42, height: 42, borderRadius: 13, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center' },
   assignmentNotice: { padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.background }, assignmentNoticeIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: colors.border, alignItems: 'center', justifyContent: 'center' }, assignmentNoticeTitle: { color: colors.ink, fontSize: 13, fontWeight: '800' }, assignmentNoticeBody: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 4 },
   timelineCard: { paddingHorizontal: 16, paddingTop: 16 }, timelineItem: { flexDirection: 'row', minHeight: 64 }, timelineAxis: { width: 28, alignItems: 'center' }, timelineDot: { width: 22, height: 22, borderRadius: 11, backgroundColor: colors.border, alignItems: 'center', justifyContent: 'center' }, timelineDotReached: { backgroundColor: colors.primary }, timelineLine: { width: 2, flex: 1, backgroundColor: colors.border }, timelineLineReached: { backgroundColor: colors.primaryLight }, timelineCopy: { flex: 1, paddingLeft: 8, paddingBottom: 15 }, timelineTitle: { color: colors.subtle, fontSize: 13, fontWeight: '700' }, timelineTitleReached: { color: colors.ink }, timelineMeta: { color: colors.subtle, fontSize: 10, marginTop: 3 }, timelineNote: { color: colors.muted, fontSize: 11, fontStyle: 'italic', marginTop: 4 },
-  paymentCard: { padding: 16, gap: 14 }, methodLabel: { color: colors.ink, fontWeight: '700', fontSize: 13 }, methods: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, method: { paddingHorizontal: 11, paddingVertical: 8, borderRadius: 999, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border }, methodActive: { backgroundColor: colors.primaryLight, borderColor: colors.primary }, methodText: { color: colors.muted, fontSize: 11, textTransform: 'capitalize', fontWeight: '700' }, methodTextActive: { color: colors.primary }, receiptButton: { marginTop: 18 },
+  paymentCard: { padding: 16, gap: 14 }, methodLabel: { color: colors.ink, fontWeight: '700', fontSize: 13 }, methods: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, method: { paddingHorizontal: 11, paddingVertical: 8, borderRadius: 999, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border }, methodActive: { backgroundColor: colors.primaryLight, borderColor: colors.primary }, methodText: { color: colors.muted, fontSize: 11, textTransform: 'capitalize', fontWeight: '700' }, methodTextActive: { color: colors.primary }, paymentError: { color: colors.red, fontSize: 11, lineHeight: 16 }, receiptButton: { marginTop: 18 },
 });

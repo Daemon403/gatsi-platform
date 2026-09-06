@@ -1,13 +1,49 @@
-import { dateTime, getActiveUser, money, orderPaid, orderTotal, visibleOrders } from '@gatsi/domain';
-import { CheckCircle2, FileText, Printer, ReceiptText } from 'lucide-react';
+import { dateTime, money, visibleReceipts } from '@gatsi/domain';
+import { CheckCircle2, FileText, ReceiptText, Store } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button, Card, Empty, PageTitle } from '../components/ui';
 import { useAppStore } from '../store/AppStore';
 
 export function ReceiptsPage() {
   const { state } = useAppStore();
-  const user = getActiveUser(state)!;
-  const orders = visibleOrders(state).filter((order) => orderPaid(state, order.id) > 0);
-  const paid = orders.reduce((sum, order) => sum + orderPaid(state, order.id), 0);
-  return <><PageTitle eyebrow="Payments" title="Receipts" description="A complete record of payments made to Gatsi Comms." /><section className="receipt-summary"><span><ReceiptText /></span><div><small>Total payments recorded</small><strong>{money(paid)}</strong><p><CheckCircle2 /> {orders.length} paid order record{orders.length !== 1 ? 's' : ''}</p></div></section><div className="receipt-grid">{orders.map((order) => { const payments = state.payments.filter((item) => item.orderId === order.id); return <Card className="receipt-card" key={order.id}><div className="receipt-card-head"><span><FileText /></span><div><strong>{order.number}</strong><small>{dateTime(order.createdAt)}</small></div><i>GATSI COMMS</i></div><div className="receipt-card-body"><span>Total amount <b>{money(orderTotal(order))}</b></span><span>Amount paid <b className="green">{money(orderPaid(state, order.id))}</b></span><span>Payments <b>{payments.length}</b></span></div><div className="receipt-payments">{payments.map((payment) => <p key={payment.id}><span>{dateTime(payment.paidAt)} · {payment.method.replaceAll('_', ' ')}</span><b>{money(payment.amount)}</b></p>)}</div><div className="receipt-card-footer"><Link to={`/orders/${order.id}`}><Button variant="secondary">Open order</Button></Link><Button variant="ghost" onClick={() => window.print()}><Printer /> Print</Button></div></Card>; })}{!orders.length ? <Empty title="No receipts yet" body="A receipt will appear after your first payment is recorded." /> : null}</div></>;
+  const receipts = visibleReceipts(state);
+  const received = receipts.reduce((sum, receipt) => sum + receipt.amountPaid, 0);
+  const serviceCount = receipts.filter((receipt) => receipt.kind === 'service').length;
+  const storeCount = receipts.length - serviceCount;
+
+  return <>
+    <PageTitle eyebrow="Transactions" title="Receipts" description="One permanent receipt for every service payment and store sale." />
+    <section className="receipt-summary">
+      <span><ReceiptText /></span>
+      <div>
+        <small>Total received on visible receipts</small>
+        <strong>{money(received)}</strong>
+        <p><CheckCircle2 /> {receipts.length} transaction{receipts.length === 1 ? '' : 's'} · {serviceCount} service · {storeCount} store</p>
+      </div>
+    </section>
+    <div className="receipt-grid">
+      {receipts.map((receipt) => <Card className="receipt-card" key={receipt.id}>
+        <div className="receipt-card-head">
+          <span>{receipt.kind === 'store' ? <Store /> : <FileText />}</span>
+          <div><strong>{receipt.number}</strong><small>{dateTime(receipt.issuedAt)}</small></div>
+          <i>{receipt.kind === 'store' ? 'STORE SALE' : 'SERVICE PAYMENT'}</i>
+        </div>
+        <div className="receipt-card-body">
+          <span>Customer <b>{receipt.customerName}</b></span>
+          <span>{receipt.kind === 'service' ? 'Order' : 'Item'} <b>{receipt.orderNumber ?? receipt.lines[0]?.description ?? 'Store sale'}</b></span>
+          <span>Paid <b className="green">{money(receipt.amountPaid)}</b></span>
+        </div>
+        <div className="receipt-payments">
+          <p><span>Payment method</span><b>{receipt.paymentMethod.replaceAll('_', ' ')}</b></p>
+          <p><span>Branch</span><b>{receipt.branchName}</b></p>
+          {receipt.balanceAfter > 0 ? <p><span>Balance after payment</span><b>{money(receipt.balanceAfter)}</b></p> : null}
+        </div>
+        <div className="receipt-card-footer">
+          {receipt.orderId ? <Link to={`/orders/${receipt.orderId}`}><Button variant="ghost">Open order</Button></Link> : null}
+          <Link to={`/receipts/${receipt.id}`}><Button variant="secondary">View receipt</Button></Link>
+        </div>
+      </Card>)}
+      {!receipts.length ? <Empty title="No receipts yet" body="Receipts will appear automatically when a service payment or store sale is recorded." /> : null}
+    </div>
+  </>;
 }

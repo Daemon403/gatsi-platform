@@ -1,5 +1,5 @@
 import { createEmptyState } from './data';
-import { makeId, normalizeClothingSales, normalizeNotifications, notificationRelatesToUser, orderBalance } from './helpers';
+import { createServiceReceipt, createStoreReceipt, ensureTransactionReceipts, makeId, normalizeClothingSales, normalizeNotifications, notificationRelatesToUser, orderBalance } from './helpers';
 import type { Activity, AppAction, AppNotification, AppState, Order } from './types';
 
 const activity = (state: AppState, values: Omit<Activity, 'id' | 'at'>): Activity => ({
@@ -35,14 +35,15 @@ const orderNotification = (
 export const appReducer = (state: AppState, action: AppAction): AppState => {
   switch (action.type) {
     case 'HYDRATE':
-      return action.state.version === state.version
-        ? {
+      if (action.state.version !== state.version) return state;
+      const hydrated = {
           ...action.state,
           notifications: normalizeNotifications(action.state.notifications),
           clothingItems: Array.isArray(action.state.clothingItems) ? action.state.clothingItems : [],
           clothingSales: normalizeClothingSales(action.state.clothingSales),
-        }
-        : state;
+          receipts: Array.isArray(action.state.receipts) ? action.state.receipts : [],
+        };
+      return { ...hydrated, receipts: ensureTransactionReceipts(hydrated) };
     case 'LOGIN': {
       const user = state.users.find((item) => item.id === action.userId);
       if (!user) return state;
@@ -133,9 +134,12 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
         || Math.abs(amount - Number(amount.toFixed(2))) > 1e-9
         || (amount > balance && amount - balance > comparisonTolerance)
       ) return state;
+      const receipt = createServiceReceipt(state, action.payment);
+      if (!receipt) return state;
       return {
         ...state,
         payments: [action.payment, ...state.payments],
+        receipts: [receipt, ...(state.receipts ?? []).filter((item) => item.transactionId !== action.payment.id || item.kind !== 'service')],
         activities: [activity(state, { branchId: order.branchId, userId: action.payment.receivedByUserId, message: `recorded a $${action.payment.amount.toFixed(2)} payment for ${order.number}`, kind: 'payment' }), ...state.activities],
       };
     }
@@ -200,6 +204,7 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
         || unitPrice < 0
         || unitPrice > 1_000_000
         || Math.abs(unitPrice - Number(unitPrice.toFixed(2))) > 1e-9
+        || !['cash', 'ecocash', 'card', 'bank_transfer'].includes(action.sale.paymentMethod)
       ) return state;
       const sale = {
         ...action.sale,
@@ -208,10 +213,12 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
         unitPrice,
         total: Number((unitPrice * action.sale.quantity).toFixed(2)),
       };
+      const receipt = createStoreReceipt(state, sale, item);
       return {
         ...state,
         clothingItems: state.clothingItems.map((entry) => entry.id === item.id ? { ...entry, quantity: entry.quantity - action.sale.quantity } : entry),
         clothingSales: [sale, ...(state.clothingSales ?? [])],
+        receipts: [receipt, ...(state.receipts ?? []).filter((entry) => entry.transactionId !== sale.id || entry.kind !== 'store')],
         activities: [activity(state, {
           branchId: item.branchId,
           userId: action.sale.soldByUserId,

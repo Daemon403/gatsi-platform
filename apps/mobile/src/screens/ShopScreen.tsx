@@ -3,15 +3,20 @@ import {
   getActiveUser,
   makeId,
   money,
+  receiptIdForTransaction,
   shortDate,
   type ClothingItem,
   type ClothingSale,
+  type PaymentMethod,
 } from '@gatsi/domain';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import React, { useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { AppHeader } from '../components/AppHeader';
 import { Screen } from '../components/Screen';
 import { Card, EmptyState, Input, PrimaryButton, SectionTitle } from '../components/ui';
+import type { RootStackParamList } from '../navigation/types';
 import { useAppStore } from '../store/AppStore';
 import { apiAction } from '../store/api';
 import { colors, radius } from '../theme';
@@ -42,6 +47,7 @@ const draftFromItem = (item: ClothingItem): ClothingDraft => ({
 
 type DraftValidation = { error: string } | { price: number; quantity: number; reorderLevel: number };
 type ClothingSaleWithListPrice = ClothingSale & { listUnitPrice: number };
+const paymentMethods: PaymentMethod[] = ['cash', 'ecocash', 'card', 'bank_transfer'];
 
 const validateDraft = (draft: ClothingDraft): DraftValidation => {
   const price = Number(draft.price);
@@ -61,6 +67,7 @@ export function ShopScreen() {
 
 function ShopView() {
   const { state, dispatch } = useAppStore();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const user = getActiveUser(state)!;
   const [creating, setCreating] = useState(false);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
@@ -208,7 +215,7 @@ function ShopView() {
           <Text style={styles.saleHistoryMeta}>{sale.quantity} sold · {shortDate(sale.soldAt)} · {seller?.name ?? 'Team member'}</Text>
           <Text style={styles.saleHistoryPrices}>List {money(listUnitPrice)} → final {money(sale.unitPrice)} each</Text>
         </View>
-        <View style={styles.saleHistoryAmount}><Text style={styles.saleHistoryTotal}>{money(sale.total)}</Text><Text style={styles.saleHistoryTotalLabel}>FINAL TOTAL</Text></View>
+        <View style={styles.saleHistoryAmount}><Text style={styles.saleHistoryTotal}>{money(sale.total)}</Text><Text style={styles.saleHistoryTotalLabel}>FINAL TOTAL</Text><TouchableOpacity accessibilityLabel={`Open receipt for ${item?.name ?? 'sale'}`} onPress={() => navigation.navigate('Receipt', { receiptId: receiptIdForTransaction('store', sale.id) })} style={styles.saleReceipt}><Feather name="file-text" size={15} color={colors.primary} /><Text style={styles.saleReceiptText}>Receipt</Text></TouchableOpacity></View>
       </Card>;
     })}
     {!recentSales.length ? <Card><EmptyState icon="shopping-cart" title="No clothing sales" body="Completed clothing sales will appear here." /></Card> : null}
@@ -336,9 +343,11 @@ function ClothingFields({ draft, branches, disabled, onChange, showQuantity = fa
 
 function SaleRecorder({ item, onClose }: { item: ClothingItem; onClose: () => void }) {
   const { state, dispatch } = useAppStore();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const user = getActiveUser(state)!;
   const [quantity, setQuantity] = useState('1');
   const [finalUnitPrice, setFinalUnitPrice] = useState(String(item.price));
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -358,6 +367,7 @@ function SaleRecorder({ item, onClose }: { item: ClothingItem; onClose: () => vo
       listUnitPrice: item.price,
       unitPrice: parsedFinalUnitPrice,
       total,
+      paymentMethod,
       soldAt: new Date().toISOString(),
       soldByUserId: user.id,
     };
@@ -365,10 +375,10 @@ function SaleRecorder({ item, onClose }: { item: ClothingItem; onClose: () => vo
     setError('');
     try {
       const selectedBranchId = state.activeBranchId;
-      const remoteState = await apiAction({ type: 'RECORD_CLOTHING_SALE', sale });
+      const remoteState = await apiAction({ type: 'RECORD_CLOTHING_SALE', sale }, state);
       dispatch({ type: 'HYDRATE', state: { ...remoteState, activeBranchId: selectedBranchId } });
       onClose();
-      Alert.alert('Sale recorded', `${parsedQuantity} × ${item.name} sold for ${money(sale.total)} at the negotiated price. Stock has been adjusted automatically.`);
+      navigation.navigate('Receipt', { receiptId: receiptIdForTransaction('store', sale.id) });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'The sale could not be recorded.');
     } finally {
@@ -390,6 +400,8 @@ function SaleRecorder({ item, onClose }: { item: ClothingItem; onClose: () => vo
       <View style={styles.halfField}><Text style={styles.fieldLabel}>Initial list price</Text><Text style={styles.fixedPrice}>{money(item.price)}</Text></View>
     </View>
     <Input label="Final negotiated unit price *" value={finalUnitPrice} editable={!saving} onChangeText={(value) => { setFinalUnitPrice(value); setError(''); }} keyboardType="decimal-pad" />
+    <Text style={styles.fieldLabel}>Payment method *</Text>
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.choiceRow}>{paymentMethods.map((method) => <Choice key={method} label={method.replaceAll('_', ' ')} selected={paymentMethod === method} disabled={saving} onPress={() => setPaymentMethod(method)} />)}</ScrollView>
     <View style={styles.priceComparison}>
       <View><Text style={styles.comparisonLabel}>LIST TOTAL</Text><Text style={styles.comparisonList}>{money(listTotal)}</Text></View>
       <Feather name="arrow-right" size={18} color={colors.muted} />
@@ -515,6 +527,8 @@ const styles = StyleSheet.create({
   saleHistoryAmount: { alignItems: 'flex-end' },
   saleHistoryTotal: { color: colors.primary, fontSize: 12, fontWeight: '900' },
   saleHistoryTotalLabel: { color: colors.subtle, fontSize: 7, fontWeight: '800', marginTop: 3 },
+  saleReceipt: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8, paddingVertical: 4 },
+  saleReceiptText: { color: colors.primary, fontSize: 9, fontWeight: '800' },
   priceComparison: { padding: 12, borderRadius: radius.sm, backgroundColor: colors.primaryLight, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   comparisonLabel: { color: colors.muted, fontSize: 8, fontWeight: '800' },
   comparisonList: { color: colors.ink, fontSize: 15, fontWeight: '900', marginTop: 4 },

@@ -12,6 +12,7 @@ const navigation = (role: Role): NavItem[] => role === 'admin' ? [
   { label: 'Customers', path: '/customers', icon: <UsersRound /> },
   { label: 'Inventory', path: '/inventory', icon: <Boxes /> },
   { label: 'Store', path: '/shop', icon: <Store /> },
+  { label: 'Receipts', path: '/receipts', icon: <ReceiptText /> },
   { label: 'Team', path: '/team', icon: <ClipboardCheck /> },
   { label: 'Branches', path: '/branches', icon: <Building2 /> },
   { label: 'Services', path: '/services', icon: <Scissors /> },
@@ -21,6 +22,7 @@ const navigation = (role: Role): NavItem[] => role === 'admin' ? [
   { label: 'Orders', path: '/orders', icon: <Package2 /> },
   { label: 'Inventory', path: '/inventory', icon: <Boxes /> },
   { label: 'Store', path: '/shop', icon: <Store /> },
+  { label: 'Receipts', path: '/receipts', icon: <ReceiptText /> },
   { label: 'Team', path: '/team', icon: <ClipboardCheck /> },
   { label: 'Services', path: '/services', icon: <Scissors /> },
 ] : [

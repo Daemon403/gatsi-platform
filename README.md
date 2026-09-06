@@ -34,7 +34,7 @@ Every queued mutation has a stable idempotency key recorded by PostgreSQL, so re
 
 The web service worker caches the production application shell after the first online visit. Mobile assets are already packaged in the Expo build. First-time sign-in, password reset/change, verification, daily-summary generation, staff-account administration and conflict-prone record edits remain online-only. Customer passwords are derived by the API from the documented first-name/last-name convention when an offline customer creation syncs; plaintext passwords are never written to an offline queue. Legacy caches without the current database revision are rejected, so previously bundled sample data cannot reappear.
 
-Administrators can maintain branches, services, staff, customers, their own login username and profile, and saleable clothing stock. A dedicated Store view keeps retail products separate from services and operating inventory; each sale preserves the original list price alongside its final negotiated price, reduces stock atomically and remains in sales history. Daily operations summaries are stored separately from role-scoped app state and include branch, order, payment, pickup, staffing, supply and clothing-sales metrics.
+Administrators can maintain branches, services, staff, customers, their own login username and profile, and saleable clothing stock. A dedicated Store view keeps retail products separate from services and operating inventory; each sale preserves the original list price alongside its final negotiated price, reduces stock atomically and remains in sales history. Every service payment and store sale creates a permanent, role-scoped receipt in the same atomic state update. Receipts preserve the transaction-time customer, branch, issuer, line items, prices, payment method and balance; they remain available from dedicated receipt history and detail views on web and mobile. Operations reporting provides an on-demand current-day view of orders and transactions, refreshes from PostgreSQL every minute while open, and falls back to the authenticated device cache when offline. Permanent completed-day summaries remain stored separately for historical reporting.
 
 Administrators can switch between a consolidated view and branches they create. Staff access is limited to assigned branches, while customer data is scoped to the customer's own account.
 
@@ -73,6 +73,7 @@ Important endpoints include:
 - `POST /api/actions`
 - `GET /api/audit`
 - `GET /api/admin/operations-summaries`
+- `GET /api/admin/operations-summaries/current`
 - `POST /api/admin/operations-summaries/generate`
 - `GET /api/cron/daily-operations` (secured by `CRON_SECRET`)
 
@@ -137,7 +138,7 @@ Both clients use the authenticated API in `apps/api`. Passwords are salted and h
 - Order workflow from received through collected
 - Timestamped customer-visible status journey
 - Partial and full payments with multiple methods
-- Receipt views
+- Automatic per-transaction receipts for service payments and store sales
 - Inventory additions, usage and reorder alerts
 - Staff attendance and assignments
 - Customer pickup booking and history

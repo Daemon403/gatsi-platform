@@ -79,8 +79,8 @@ export function MoreScreen() {
         /> : null}
         {currentUser.role === 'admin' ? <MenuItem
           icon="bar-chart-2"
-          title="Daily operations summaries"
-          detail="Review permanent completed-day snapshots across all branches"
+          title="Operations summaries"
+          detail="See today's live orders and transactions or review completed-day history"
           onPress={() => navigation.navigate('OperationsSummaries')}
         /> : null}
       </Card>
@@ -95,6 +95,7 @@ export function MoreScreen() {
 
     <SectionTitle title="Workspace" />
     <Card style={styles.menu}>
+      <MenuItem icon="file-text" title="Receipts" detail="View service-payment and store-sale transaction receipts" onPress={() => navigation.navigate('Receipts')} />
       <MenuItem icon="log-out" title="Sign out" detail="Return to secure account login" onPress={logout} />
       <MenuItem icon="trash-2" title="Clear local data" detail="Discard this device's cache and return to sign in" onPress={reset} danger />
     </Card>

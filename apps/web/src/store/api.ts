@@ -672,6 +672,10 @@ export const apiOperationsSummaries = () => {
   const context = captureContext();
   return raw<{ items: DailyOperationsSummary[] }>('/admin/operations-summaries', undefined, true, context?.sessionId);
 };
+export const apiCurrentOperationsSummary = () => {
+  const context = captureContext();
+  return raw<{ summary: DailyOperationsSummary }>('/admin/operations-summaries/current', undefined, true, context?.sessionId);
+};
 export const apiGenerateOperationsSummary = () => {
   const context = captureContext();
   return raw<{ summary: DailyOperationsSummary }>('/admin/operations-summaries/generate', { method: 'POST', body: '{}' }, true, context?.sessionId);

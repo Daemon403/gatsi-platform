@@ -18,6 +18,7 @@ import { OrdersScreen } from '../screens/OrdersScreen';
 import { PickupRequestScreen } from '../screens/PickupRequestScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
 import { ReceiptScreen } from '../screens/ReceiptScreen';
+import { ReceiptsScreen } from '../screens/ReceiptsScreen';
 import { ServicesManagementScreen } from '../screens/ServicesManagementScreen';
 import { ShopScreen } from '../screens/ShopScreen';
 import { StockScreen } from '../screens/StockScreen';
@@ -72,6 +73,7 @@ export function AppNavigation() {
         <Root.Screen name="CreateOrder" component={CreateOrderScreen} />
         <Root.Screen name="PickupRequest" component={PickupRequestScreen} />
         <Root.Screen name="Receipt" component={ReceiptScreen} />
+        <Root.Screen name="Receipts" component={ReceiptsScreen} />
         <Root.Screen name="Notifications" component={NotificationsScreen} />
         <Root.Screen name="Profile" component={ProfileScreen} />
         {role !== 'customer' ? <Root.Screen name="Shop" component={ShopScreen} /> : null}

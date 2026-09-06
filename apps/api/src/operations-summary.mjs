@@ -132,6 +132,20 @@ async function summaryWindow(client, date) {
   };
 }
 
+export async function getCurrentOperationsSummary(client, now = new Date()) {
+  const row = (await client.query('SELECT payload, updated_at FROM app_state WHERE singleton=true')).rows[0];
+  if (!row) throw new Error('Application state has not been initialized.');
+  const date = harareDateKey(now);
+  const window = await summaryWindow(client, date);
+  const generatedAt = now.toISOString();
+  const summary = buildDailyOperationsSummary(row.payload, date, { ...window, windowEnd: generatedAt });
+  return {
+    ...summary,
+    id: `operations-summary-live-${date}`,
+    generatedAt,
+  };
+}
+
 export async function storeDailyOperationsSummary(client, summary, sourceStateUpdatedAt, { replace = false } = {}) {
   const values = [
     summary.date,

@@ -1,6 +1,6 @@
 import type { AppState, OrderStatus } from './types';
 
-export const DATA_REVISION = 2;
+export const DATA_REVISION = 3;
 
 export const statusSequence: OrderStatus[] = [
   'received',
@@ -46,6 +46,7 @@ export const createEmptyState = (): AppState => ({
   inventory: [],
   clothingItems: [],
   clothingSales: [],
+  receipts: [],
   activities: [],
   notifications: [],
 });

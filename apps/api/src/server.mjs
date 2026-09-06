@@ -1,7 +1,8 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 import { pool, query, transaction } from './db.mjs';
-import { generateAndStoreDailyOperationsSummary, listDailyOperationsSummaries, previousHarareDateKey, validSummaryDate } from './operations-summary.mjs';
+import { generateAndStoreDailyOperationsSummary, getCurrentOperationsSummary, listDailyOperationsSummaries, previousHarareDateKey, validSummaryDate } from './operations-summary.mjs';
+import { createServiceReceipt, createStoreReceipt, ensureTransactionReceipts, normalizeClothingSales } from './receipts.mjs';
 import { newToken, passwordAcceptable, passwordHash, passwordValid, safeUser, tokenHash, tokenHashes } from './security.mjs';
 
 const port = Number(process.env.PORT || 4000); const host = process.env.HOST || '0.0.0.0'; const production = process.env.NODE_ENV === 'production';
@@ -18,7 +19,7 @@ const initialAdmin = {
   email: process.env.INITIAL_ADMIN_EMAIL || '',
   phone: process.env.INITIAL_ADMIN_PHONE || '',
 };
-const emptyState = { version: 1, dataRevision: 2, activeUserId: null, activeBranchId: 'all', branches: [], users: [], customers: [], services: [], orders: [], payments: [], pickupRequests: [], inventory: [], clothingItems: [], clothingSales: [], activities: [], notifications: [] };
+const emptyState = { version: 1, dataRevision: 3, activeUserId: null, activeBranchId: 'all', branches: [], users: [], customers: [], services: [], orders: [], payments: [], pickupRequests: [], inventory: [], clothingItems: [], clothingSales: [], receipts: [], activities: [], notifications: [] };
 
 const nowPlus = (amount, unit) => new Date(Date.now() + amount * unit); const ipOf = (req) => String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
 const response = (res,status,body,origin) => { res.writeHead(status,{ 'content-type':'application/json; charset=utf-8','access-control-allow-origin':origin || '','access-control-allow-headers':'authorization,content-type,x-idempotency-key','access-control-allow-methods':'GET,POST,OPTIONS',vary:'Origin','x-content-type-options':'nosniff','referrer-policy':'no-referrer','cache-control':'no-store' }); res.end(JSON.stringify(body)); };
@@ -38,13 +39,16 @@ async function seed() { await transaction(async c => {
   if(!Array.isArray(state.users)||!state.users.length){
     const admins=(await c.query("SELECT id,username,email,phone,verified_at,active,profile FROM users WHERE role='admin' ORDER BY created_at,id")).rows;
     state.users=admins.map(account=>({...account.profile,id:account.id,role:'admin',name:account.profile?.name||account.username,username:account.username,email:account.email??account.profile?.email??'',phone:account.phone??account.profile?.phone??'',branchIds:[],verified:Boolean(account.verified_at),active:account.active}));
-    state.version=1;state.dataRevision=2;state.activeUserId=null;state.activeBranchId='all';
-    await c.query('UPDATE app_state SET payload=$1,updated_at=now() WHERE singleton=true',[JSON.stringify(state)]);
+    state.activeUserId=null;state.activeBranchId='all';
   }
+  const normalized=normalizeState(state);normalized.version=1;normalized.dataRevision=3;
+  await c.query('UPDATE app_state SET payload=$1,updated_at=now() WHERE singleton=true',[JSON.stringify(normalized)]);
 }); }
 const normalizeNotifications = (value) => Array.isArray(value)?value.filter(item=>item&&typeof item==='object'&&typeof item.id==='string'&&typeof item.title==='string'&&typeof item.message==='string'&&typeof item.at==='string').map(item=>({...item,recipientUserIds:Array.isArray(item.recipientUserIds)?item.recipientUserIds.filter(id=>typeof id==='string'):[],readByUserIds:Array.isArray(item.readByUserIds)?item.readByUserIds.filter(id=>typeof id==='string'):[]})).slice(0,500):[];
-const normalizeClothingSales = (value) => Array.isArray(value)?value.filter(item=>item&&typeof item==='object'&&!Array.isArray(item)).map(item=>{const unitPrice=typeof item.unitPrice==='number'&&Number.isFinite(item.unitPrice)?item.unitPrice:0;return {...item,unitPrice,listUnitPrice:typeof item.listUnitPrice==='number'&&Number.isFinite(item.listUnitPrice)?item.listUnitPrice:unitPrice};}):[];
-const normalizeState = (state) => ({...state,dataRevision:Number(state?.dataRevision||0),notifications:normalizeNotifications(state?.notifications),clothingItems:Array.isArray(state?.clothingItems)?state.clothingItems:[],clothingSales:normalizeClothingSales(state?.clothingSales)});
+const normalizeState = (state) => {
+  const normalized={...state,dataRevision:Number(state?.dataRevision||0),notifications:normalizeNotifications(state?.notifications),clothingItems:Array.isArray(state?.clothingItems)?state.clothingItems:[],clothingSales:normalizeClothingSales(state?.clothingSales),receipts:Array.isArray(state?.receipts)?state.receipts:[]};
+  return {...normalized,receipts:ensureTransactionReceipts(normalized)};
+};
 const loadState = async (client=pool) => normalizeState((await client.query('SELECT payload FROM app_state WHERE singleton=true')).rows[0].payload);
 const publicUsers = (state) => ({...state,users:state.users.map(({password,passwordHash,...u})=>u)});
 const scoped = (state,user) => {
@@ -58,8 +62,9 @@ const scoped = (state,user) => {
     return (candidate.branchIds||[]).some(id=>branchIds.includes(id));
   });
   const notifications=user.role==='admin'?state.notifications:state.notifications.filter(item=>notificationRelatesToUser(state,item,user)).map(item=>({...item,recipientUserIds:(item.recipientUserIds||[]).includes(user.id)?[user.id]:[],readByUserIds:(item.readByUserIds||[]).includes(user.id)?[user.id]:[]}));
+  const receipts=user.role==='customer'?state.receipts.filter(item=>item.customerId===user.profile.customerId):state.receipts.filter(item=>branchIds.includes(item.branchId));
   const visibleBranchIds=user.role==='customer'?new Set([...branchIds,...orders.map(order=>order.branchId),...state.pickupRequests.filter(item=>item.customerId===user.profile.customerId).map(item=>item.branchId)]):new Set(branchIds);
-  return publicUsers({...state,activeUserId:user.id,activeBranchId:user.role==='admin'?'all':branchIds[0],branches:state.branches.filter(b=>visibleBranchIds.has(b.id)),users,customers:user.role==='customer'?state.customers.filter(c=>c.id===user.profile.customerId):state.customers.filter(c=>branchIds.includes(c.branchId)),orders,payments:state.payments.filter(p=>ids.has(p.orderId)),pickupRequests:user.role==='customer'?state.pickupRequests.filter(p=>p.customerId===user.profile.customerId):state.pickupRequests.filter(p=>branchIds.includes(p.branchId)),inventory:user.role==='customer'?[]:state.inventory.filter(i=>branchIds.includes(i.branchId)),clothingItems:user.role==='customer'?[]:state.clothingItems.filter(i=>branchIds.includes(i.branchId)),clothingSales:user.role==='customer'?[]:state.clothingSales.filter(s=>branchIds.includes(s.branchId)),activities:user.role==='customer'?[]:state.activities.filter(a=>branchIds.includes(a.branchId)),notifications});
+  return publicUsers({...state,activeUserId:user.id,activeBranchId:user.role==='admin'?'all':branchIds[0],branches:state.branches.filter(b=>visibleBranchIds.has(b.id)),users,customers:user.role==='customer'?state.customers.filter(c=>c.id===user.profile.customerId):state.customers.filter(c=>branchIds.includes(c.branchId)),orders,payments:state.payments.filter(p=>ids.has(p.orderId)),pickupRequests:user.role==='customer'?state.pickupRequests.filter(p=>p.customerId===user.profile.customerId):state.pickupRequests.filter(p=>branchIds.includes(p.branchId)),inventory:user.role==='customer'?[]:state.inventory.filter(i=>branchIds.includes(i.branchId)),clothingItems:user.role==='customer'?[]:state.clothingItems.filter(i=>branchIds.includes(i.branchId)),clothingSales:user.role==='customer'?[]:state.clothingSales.filter(s=>branchIds.includes(s.branchId)),receipts,activities:user.role==='customer'?[]:state.activities.filter(a=>branchIds.includes(a.branchId)),notifications});
 };
 const canBranch=(user,id)=>user.role==='admin'||(user.profile.branchIds||[]).includes(id);
 const activity=(branchId,userId,message,kind)=>({id:`activity-${randomUUID()}`,branchId,userId,message,kind,at:new Date().toISOString()});
@@ -447,9 +452,11 @@ async function mutate(user,action,req){
     const amountCents=integerCents(amount),totalCents=orderTotalCents(o),paidCents=orderPaidCents(state,o.id),balanceCents=Math.max(0,totalCents-paidCents);
     if(amountCents>balanceCents)throw fail(`Payment cannot exceed the outstanding balance of $${(balanceCents/100).toFixed(2)}.`,409);
     const normalizedAmount=amountCents/100,reference=textValue(incoming.reference,200),paidAt=new Date(clientOccurrenceTime(incoming.paidAt)).toISOString();
-    state.payments.unshift({id:paymentId,orderId:o.id,amount:normalizedAmount,method:incoming.method,paidAt,...(reference?{reference}:{}),receivedByUserId:user.id});
+    const payment={id:paymentId,orderId:o.id,amount:normalizedAmount,method:incoming.method,paidAt,...(reference?{reference}:{}),receivedByUserId:user.id};
+    state.payments.unshift(payment);
+    const receipt=createServiceReceipt(state,payment);if(!receipt)throw fail('Unable to create a receipt for this payment.',500);state.receipts.unshift(receipt);
     state.activities.unshift(activity(o.branchId,user.id,`recorded a $${normalizedAmount.toFixed(2)} payment for ${o.number}`,'payment'));
-    auditMetadata={orderId:o.id,amount:normalizedAmount,balanceBefore:balanceCents/100,balanceAfter:(balanceCents-amountCents)/100};auditEntityType='payment';auditEntityId=paymentId;
+    auditMetadata={orderId:o.id,amount:normalizedAmount,paymentMethod:incoming.method,balanceBefore:balanceCents/100,balanceAfter:(balanceCents-amountCents)/100,receiptId:receipt.id,receiptNumber:receipt.number};auditEntityType='payment';auditEntityId=paymentId;
   }
   else if(action.type==='CREATE_PICKUP'){
     const incoming=action.request||{},id=textValue(incoming.id,128),customerId=textValue(incoming.customerId,128),branchId=textValue(incoming.branchId,128),address=textValue(incoming.address,300),instructions=textValue(incoming.instructions,1000);
@@ -515,7 +522,7 @@ async function mutate(user,action,req){
   }
   else if(action.type==='RECORD_CLOTHING_SALE'){
     if(user.role==='customer')throw fail('Not authorized.',403);
-    const incoming=action.sale||{},id=textValue(incoming.id,128),itemId=textValue(incoming.itemId,128),quantity=incoming.quantity,unitPrice=incoming.unitPrice;
+    const incoming=action.sale||{},id=textValue(incoming.id,128),itemId=textValue(incoming.itemId,128),quantity=incoming.quantity,unitPrice=incoming.unitPrice,paymentMethod=incoming.paymentMethod;
     const target=state.clothingItems.find(item=>item.id===itemId);
     if(!id||!target)throw fail('Choose a valid clothing item.');
     if(state.clothingSales.some(sale=>sale.id===id))throw fail('Sale ID already exists.',409);
@@ -523,11 +530,13 @@ async function mutate(user,action,req){
     if(!Number.isInteger(quantity)||quantity<1)throw fail('Sale quantity must be a positive whole number.');
     if(quantity>target.quantity)throw fail(`Only ${target.quantity} unit${target.quantity===1?' is':'s are'} available.`,409);
     if(typeof unitPrice!=='number'||!Number.isFinite(unitPrice)||unitPrice<0||unitPrice>1000000||!hasCentPrecision(unitPrice))throw fail('Negotiated selling price must be a valid amount with no more than two decimal places.');
+    if(!new Set(['cash','ecocash','card','bank_transfer']).has(paymentMethod))throw fail('Choose a valid payment method.');
     const listUnitPrice=integerCents(target.price)/100,normalizedUnitPrice=integerCents(unitPrice)/100,listTotal=integerCents(listUnitPrice*quantity)/100,total=integerCents(normalizedUnitPrice*quantity)/100,soldAt=new Date(clientOccurrenceTime(incoming.soldAt)).toISOString();
-    const sale={id,itemId,branchId:target.branchId,quantity,listUnitPrice,unitPrice:normalizedUnitPrice,total,soldAt,soldByUserId:user.id};
+    const sale={id,itemId,branchId:target.branchId,quantity,listUnitPrice,unitPrice:normalizedUnitPrice,total,paymentMethod,soldAt,soldByUserId:user.id};
     target.quantity-=quantity;state.clothingSales.unshift(sale);
+    const receipt=createStoreReceipt(state,sale,target);state.receipts.unshift(receipt);
     state.activities.unshift(activity(target.branchId,user.id,`sold ${quantity} ${target.name}`,'inventory'));
-    auditMetadata={itemId,quantity,listUnitPrice,negotiatedUnitPrice:normalizedUnitPrice,listTotal,total,priceDifference:(integerCents(total)-integerCents(listTotal))/100};auditEntityType='clothing_sale';auditEntityId=id;
+    auditMetadata={itemId,quantity,listUnitPrice,negotiatedUnitPrice:normalizedUnitPrice,listTotal,total,paymentMethod,priceDifference:(integerCents(total)-integerCents(listTotal))/100,receiptId:receipt.id,receiptNumber:receipt.number};auditEntityType='clothing_sale';auditEntityId=id;
   }
   else if(action.type==='CLOCK_TOGGLE'){
     const target=state.users.find(x=>x.id===action.userId);
@@ -577,6 +586,7 @@ const routedHandler=async(req,res)=>{
   const intercepted=url.pathname==='/api/cron/daily-operations'
     || url.pathname==='/api/account/password'
     || url.pathname==='/api/admin/operations-summaries'
+    || url.pathname==='/api/admin/operations-summaries/current'
     || url.pathname==='/api/admin/operations-summaries/generate';
   if(!intercepted||req.method==='OPTIONS')return handler(req,res);
   const origin=origins.has(req.headers.origin)?req.headers.origin:'';
@@ -612,6 +622,10 @@ const routedHandler=async(req,res)=>{
     }
 
     requireAdmin(user);
+    if(url.pathname==='/api/admin/operations-summaries/current'&&req.method==='GET'){
+      const summary=await getCurrentOperationsSummary(pool);
+      return response(res,200,{summary},origin);
+    }
     if(url.pathname==='/api/admin/operations-summaries'&&req.method==='GET'){
       const items=await listDailyOperationsSummaries(pool,url.searchParams.get('limit')??31);
       return response(res,200,{items},origin);
