@@ -50,6 +50,18 @@ export function MoreScreen() {
     </TouchableOpacity>
     <Text style={styles.editHint}>Tap your profile to edit your details</Text>
 
+    {currentUser.role === 'admin' ? <>
+      <SectionTitle title="Settings" />
+      <Card style={styles.menu}>
+        <MenuItem
+          icon="refresh-cw"
+          title="Synchronization settings"
+          detail={`Mobile schedule: ${state.settings?.synchronizationMode === 'daily' ? 'first time online each day' : 'whenever connectivity returns'}`}
+          onPress={() => navigation.navigate('SynchronizationSettings')}
+        />
+      </Card>
+    </> : null}
+
     {canViewTeam ? <>
       <SectionTitle title="Management" />
       <Card style={styles.menu}>
@@ -82,12 +94,6 @@ export function MoreScreen() {
           title="Operations summaries"
           detail="See today's live orders and transactions or review completed-day history"
           onPress={() => navigation.navigate('OperationsSummaries')}
-        /> : null}
-        {currentUser.role === 'admin' ? <MenuItem
-          icon="refresh-cw"
-          title="Synchronization"
-          detail={`Automatic schedule: ${state.settings?.synchronizationMode === 'daily' ? 'first time online each day' : 'whenever connectivity returns'}`}
-          onPress={() => navigation.navigate('Profile')}
         /> : null}
       </Card>
     </> : <>

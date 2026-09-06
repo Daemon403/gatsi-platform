@@ -77,6 +77,7 @@ function ShopView() {
   const [adjustingItemId, setAdjustingItemId] = useState<string | null>(null);
   const [busyItemId, setBusyItemId] = useState<string | null>(null);
   const [cartLines, setCartLines] = useState<CartLine[]>([]);
+  const cartUnits = cartLines.reduce((total, line) => total + line.quantity, 0);
 
   const clothingItems = (state.clothingItems ?? []).filter((item) => (
     (state.activeBranchId === 'all' || item.branchId === state.activeBranchId)
@@ -150,11 +151,8 @@ function ShopView() {
       </View>
     </View>
 
-    <SectionTitle title={`Customer cart (${cartLines.length})`} />
-    <Card style={styles.cartCard}><CartCheckout lines={cartLines} onRemove={(itemId) => setCartLines((current) => current.filter((line) => line.itemId !== itemId))} onClear={() => setCartLines([])} /></Card>
-
     <SectionTitle
-      title="Clothing catalogue"
+      title="1. Select products"
       action={user.role === 'admin' ? (creating ? 'Close' : 'Add item') : undefined}
       onPress={user.role === 'admin' ? () => setCreating((value) => !value) : undefined}
     />
@@ -171,6 +169,7 @@ function ShopView() {
             <Text style={styles.productName}>{item.name}</Text>
             <Text style={styles.productMeta}>{item.sku} · {branch?.shortName ?? 'Branch'} · {item.category}</Text>
             <Text style={styles.productVariant}>{item.size} · {item.color}</Text>
+            {cartLines.find((line) => line.itemId === item.id) ? <Text style={styles.inCartText}>{cartLines.find((line) => line.itemId === item.id)!.quantity} in current cart</Text> : null}
           </View>
           <View style={[styles.statusPill, !item.active ? styles.inactivePill : isLow ? styles.lowPill : null]}>
             <Text style={[styles.statusText, !item.active ? styles.inactiveText : isLow ? styles.lowText : null]}>{!item.active ? 'Archived' : isLow ? 'Low' : 'Active'}</Text>
@@ -220,6 +219,9 @@ function ShopView() {
       </Card>;
     })}
     {!clothingItems.length ? <Card><EmptyState icon="shopping-bag" title="No clothing items" body={user.role === 'admin' ? 'Add the first sellable clothing item to start tracking retail stock.' : 'There are no clothing items available for this branch.'} /></Card> : null}
+
+    <SectionTitle title={`2. Review customer cart · ${cartLines.length} product${cartLines.length === 1 ? '' : 's'}, ${cartUnits} unit${cartUnits === 1 ? '' : 's'}`} />
+    <Card style={styles.cartCard}><CartCheckout lines={cartLines} onRemove={(itemId) => setCartLines((current) => current.filter((line) => line.itemId !== itemId))} onClear={() => setCartLines([])} /></Card>
 
     <SectionTitle title="Recent clothing sales" />
     {recentSales.map((sale) => {
@@ -541,6 +543,7 @@ const styles = StyleSheet.create({
   productName: { color: colors.ink, fontSize: 14, fontWeight: '900' },
   productMeta: { color: colors.muted, fontSize: 9, marginTop: 4, textTransform: 'capitalize' },
   productVariant: { color: colors.primary, fontSize: 9, fontWeight: '700', marginTop: 3 },
+  inCartText: { color: colors.primaryDark, fontSize: 9, fontWeight: '900', marginTop: 5 },
   statusPill: { borderRadius: 99, paddingHorizontal: 9, paddingVertical: 5, backgroundColor: colors.primaryLight },
   statusText: { color: colors.primary, fontSize: 9, fontWeight: '900' },
   inactivePill: { backgroundColor: colors.redSoft },

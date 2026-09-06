@@ -1,4 +1,4 @@
-import { appReducer, DATA_REVISION, operationsDateKey, type AppAction, type AppState, type DailyOperationsSummary, type SynchronizationMode } from '@gatsi/domain';
+import { appReducer, DATA_REVISION, type AppAction, type AppState, type DailyOperationsSummary } from '@gatsi/domain';
 
 const API_ORIGIN = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:4000' : '');
 const API_URL = `${API_ORIGIN.replace(/\/$/, '')}/api`;
@@ -11,7 +11,6 @@ const QUEUE_STORAGE = 'gatsi-comms-web-sync-v1';
 const SYNC_JOURNAL_STORAGE = 'gatsi-comms-web-sync-journal-v1';
 const MUTATION_FAILURE_STORAGE = 'gatsi-comms-web-mutation-failures-v1';
 const ONLINE_OPERATION_STORAGE = 'gatsi-comms-web-online-operation-v1';
-const SYNC_SUCCESS_STORAGE = 'gatsi-comms-web-sync-success-v1';
 const MAX_PENDING_ACTIONS = 250;
 const REQUEST_TIMEOUT_MS = 12_000;
 const ONLINE_OPERATION_TTL_MS = 24 * 60 * 60 * 1000;
@@ -24,7 +23,7 @@ type SyncJournal = { entryId: string; userId: string; confirmed: AppState; failu
 type OnlineOperation = { id: string; identity: string; action: AppAction; createdAt: string };
 type SessionContext = { epoch: number; sessionId: string; userId: string };
 export type SyncPhase = 'online' | 'offline' | 'syncing' | 'error';
-export type SyncSnapshot = { phase: SyncPhase; pendingCount: number; lastError?: string; lastSyncedAt?: string };
+export type SyncSnapshot = { phase: SyncPhase; pendingCount: number; lastError?: string };
 
 export class ApiError extends Error {
   constructor(message: string, public readonly status?: number, public readonly network = false) {
@@ -37,24 +36,6 @@ export const isNetworkError = (error: unknown): error is ApiError => error insta
 
 const mutationId = () => globalThis.crypto?.randomUUID?.() ?? `offline-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 let sessionEpoch = 0;
-
-const readSyncSuccesses = (): Record<string, string> => {
-  try {
-    const value = JSON.parse(localStorage.getItem(SYNC_SUCCESS_STORAGE) ?? '{}') as Record<string, string>;
-    return value && typeof value === 'object' && !Array.isArray(value)
-      ? Object.fromEntries(Object.entries(value).filter(([userId, timestamp]) => userId && typeof timestamp === 'string' && Number.isFinite(Date.parse(timestamp))))
-      : {};
-  } catch {
-    return {};
-  }
-};
-
-const lastSuccessfulSync = (userId?: string | null) => userId ? readSyncSuccesses()[userId] : undefined;
-const recordSuccessfulSync = (userId: string) => {
-  const lastSyncedAt = new Date().toISOString();
-  try { localStorage.setItem(SYNC_SUCCESS_STORAGE, JSON.stringify({ ...readSyncSuccesses(), [userId]: lastSyncedAt })); } catch { /* scheduling safely defaults to another attempt */ }
-  publish({ lastSyncedAt });
-};
 
 const saveTokens = (result: AuthResponse) => {
   const access = result.accessToken ?? result.token;
@@ -182,7 +163,6 @@ const listeners = new Set<(snapshot: SyncSnapshot) => void>();
 let snapshot: SyncSnapshot = {
   phase: typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : 'online',
   pendingCount: 0,
-  lastSyncedAt: lastSuccessfulSync(storedActiveUserId()),
 };
 
 const activePendingCount = (queue = readQueue(), userId = storedActiveUserId()) => {
@@ -232,12 +212,6 @@ export const setConnectivity = (online: boolean) => {
   const failure = online ? readMutationFailures().find((item) => item.userId === storedActiveUserId() && !item.dismissed) : undefined;
   publish({ phase: online ? failure ? 'error' : activePendingCount() ? 'syncing' : 'online' : 'offline', lastError: failure?.message });
 };
-export const setSynchronizationDeferred = () => publish({ phase: snapshot.phase === 'offline' ? 'offline' : 'online' });
-export const automaticSyncDue = (mode: SynchronizationMode, userId: string, now = new Date()) => {
-  if (mode === 'reconnect') return true;
-  const lastSyncedAt = lastSuccessfulSync(userId);
-  return !lastSyncedAt || operationsDateKey(lastSyncedAt) !== operationsDateKey(now);
-};
 export const handleOfflineStorageChange = (key: string | null) => {
   if (key === SESSION) sessionEpoch += 1;
   if (key === QUEUE_STORAGE || key === STATE_STORAGE || key === SYNC_JOURNAL_STORAGE || key === SESSION || key === null) publish({ pendingCount: activePendingCount() });
@@ -246,7 +220,6 @@ export const handleOfflineStorageChange = (key: string | null) => {
     if (failure) publish({ phase: 'error', lastError: failure.message });
     else if (key === MUTATION_FAILURE_STORAGE) publish({ phase: navigator.onLine === false ? 'offline' : activePendingCount() ? 'syncing' : 'online', lastError: undefined });
   }
-  if (key === SYNC_SUCCESS_STORAGE || key === null) publish({ lastSyncedAt: lastSuccessfulSync(storedActiveUserId()) });
 };
 export const isSessionStorageKey = (key: string | null) => key === SESSION;
 export const clearSyncFailure = () => {
@@ -387,7 +360,6 @@ const acceptRemote = (remote: AppState, cached: AppState | undefined, context: S
   persistConfirmedState(confirmed);
   const projected = applyQueue(confirmed, queue);
   persistCachedState(projected);
-  recordSuccessfulSync(context.userId);
   return projected;
 };
 
@@ -408,7 +380,6 @@ const commitQueuedRemote = async (entry: PendingMutation, remote: AppState, cach
   localStorage.removeItem(SYNC_JOURNAL_STORAGE);
   const projected = applyQueue(confirmed, remaining, entry.id);
   persistCachedState(projected);
-  recordSuccessfulSync(context.userId);
   publish({ pendingCount: activePendingCount(remaining, context.userId) });
   return projected;
 };
@@ -627,11 +598,6 @@ export async function apiAction(action: AppAction, optimisticBase?: AppState): P
     return optimistic;
   }
 
-  if (!automaticSyncDue(cached.settings?.synchronizationMode ?? 'reconnect', userId)) {
-    setSynchronizationDeferred();
-    return optimistic;
-  }
-
   const result = await syncPendingActions() ?? optimistic;
   const failure = failures.get(entry.id) ?? mutationFailure(entry.id);
   if (failure) {
@@ -661,7 +627,6 @@ export async function apiLogin(username: string, password: string) {
   if (!context || !contextIsCurrent(context)) throw staleSession();
   persistConfirmedState(remote);
   persistCachedState(remote);
-  if (remote.activeUserId) recordSuccessfulSync(remote.activeUserId);
   publish({ phase: 'online', pendingCount: 0, lastError: undefined });
   return remote;
 }

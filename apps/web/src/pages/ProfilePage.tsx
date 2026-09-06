@@ -1,5 +1,5 @@
-import { getActiveUser, type ProfileUpdate, type SynchronizationMode } from '@gatsi/domain';
-import { Check, KeyRound, RefreshCw, ShieldCheck, UserRound, Wifi } from 'lucide-react';
+import { getActiveUser, type ProfileUpdate } from '@gatsi/domain';
+import { Check, KeyRound, ShieldCheck, UserRound } from 'lucide-react';
 import { useState } from 'react';
 import { Button, Card, FormField, PageTitle } from '../components/ui';
 import { useAppStore } from '../store/AppStore';
@@ -14,7 +14,7 @@ type PasswordDraft = {
 const emptyPasswordDraft: PasswordDraft = { currentPassword: '', newPassword: '', confirmPassword: '' };
 
 export function ProfilePage() {
-  const { state, dispatch, sync, syncNow } = useAppStore();
+  const { state, dispatch } = useAppStore();
   const user = getActiveUser(state)!;
   const [draft, setDraft] = useState<ProfileUpdate>({
     name: user.name,
@@ -30,10 +30,6 @@ export function ProfilePage() {
   const [error, setError] = useState('');
   const [passwordMessage, setPasswordMessage] = useState('');
   const [passwordError, setPasswordError] = useState('');
-  const [savingSyncMode, setSavingSyncMode] = useState(false);
-  const [syncMessage, setSyncMessage] = useState('');
-  const [syncError, setSyncError] = useState('');
-  const synchronizationMode = state.settings?.synchronizationMode ?? 'reconnect';
 
   const update = (key: keyof ProfileUpdate, value: string) => {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -115,31 +111,8 @@ export function ProfilePage() {
     }
   };
 
-  const saveSynchronizationMode = async (mode: SynchronizationMode) => {
-    if (savingSyncMode || mode === synchronizationMode) return;
-    setSavingSyncMode(true);
-    setSyncMessage('');
-    setSyncError('');
-    try {
-      const remoteState = await apiAction({ type: 'UPDATE_SYNC_SETTINGS', synchronizationMode: mode });
-      dispatch({ type: 'HYDRATE', state: remoteState });
-      setSyncMessage(mode === 'reconnect' ? 'Devices will synchronize when connectivity returns.' : 'Devices will synchronize automatically once each day.');
-    } catch (reason) {
-      setSyncError(reason instanceof Error ? reason.message : 'The synchronization schedule could not be saved.');
-    } finally {
-      setSavingSyncMode(false);
-    }
-  };
-
-  const synchronizeNow = async () => {
-    setSyncMessage('');
-    setSyncError('');
-    await syncNow();
-    setSyncMessage('Synchronization requested.');
-  };
-
   return <>
-    <PageTitle eyebrow="Account" title="Profile, security & sync" description="Manage your details, account security and workspace synchronization." />
+    <PageTitle eyebrow="Account" title="Profile & security" description="Manage your personal details and account security." />
     <div className="profile-settings-grid">
       <Card className="profile-form-card">
         <div className="profile-form-intro"><span><UserRound /></span><div><strong>{user.role === 'customer' ? 'Your details' : 'Personal details'}</strong><p>These details are used for account communication and branch records.</p></div></div>
@@ -165,25 +138,6 @@ export function ProfilePage() {
           {passwordMessage ? <p className="form-success"><Check /> {passwordMessage}</p> : null}
           <div className="form-actions"><Button type="submit" variant="secondary" disabled={changingPassword}>{changingPassword ? 'Changing...' : 'Change password'} <KeyRound /></Button></div>
         </form>
-      </Card>
-
-      <Card className="profile-form-card profile-sync-card">
-        <div className="profile-form-intro"><span><Wifi /></span><div><strong>Synchronization</strong><p>Control when devices exchange queued operational data with PostgreSQL.</p></div></div>
-        {user.role === 'admin' ? <div className="sync-mode-options" role="radiogroup" aria-label="Automatic synchronization schedule">
-          <button type="button" role="radio" aria-checked={synchronizationMode === 'reconnect'} className={synchronizationMode === 'reconnect' ? 'selected' : ''} disabled={savingSyncMode} onClick={() => void saveSynchronizationMode('reconnect')}>
-            <span className="sync-mode-radio" /><span><strong>Whenever connectivity is restored</strong><small>Send queued work after every reconnect and synchronize online operational changes immediately.</small></span>
-          </button>
-          <button type="button" role="radio" aria-checked={synchronizationMode === 'daily'} className={synchronizationMode === 'daily' ? 'selected' : ''} disabled={savingSyncMode} onClick={() => void saveSynchronizationMode('daily')}>
-            <span className="sync-mode-radio" /><span><strong>First time online each day</strong><small>After the day's first sync, keep later work queued until tomorrow or a user synchronizes manually.</small></span>
-          </button>
-        </div> : <p className="sync-policy-readonly">Automatic schedule: <strong>{synchronizationMode === 'daily' ? 'First time online each day' : 'Whenever connectivity is restored'}</strong></p>}
-        <div className="sync-settings-status">
-          <span>{sync.pendingCount ? `${sync.pendingCount} queued ${sync.pendingCount === 1 ? 'change' : 'changes'}` : 'No queued changes'}</span>
-          <span>{sync.lastSyncedAt ? `Last synchronized ${new Date(sync.lastSyncedAt).toLocaleString('en-ZW')}` : 'Not synchronized on this device yet'}</span>
-        </div>
-        {syncError ? <p className="form-error" role="alert">{syncError}</p> : null}
-        {syncMessage ? <p className="form-success"><Check /> {syncMessage}</p> : null}
-        <div className="form-actions"><Button type="button" variant="secondary" disabled={sync.phase === 'syncing'} onClick={() => void synchronizeNow()}>{sync.phase === 'syncing' ? 'Synchronizing...' : 'Synchronize now'} <RefreshCw /></Button></div>
       </Card>
     </div>
   </>;

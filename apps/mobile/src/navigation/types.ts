@@ -11,6 +11,7 @@ export type RootStackParamList = {
   Shop: undefined;
   Notifications: undefined;
   Profile: undefined;
+  SynchronizationSettings: undefined;
   OperationsSummaries: undefined;
 };
 

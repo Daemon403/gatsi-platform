@@ -22,6 +22,7 @@ import { ReceiptsScreen } from '../screens/ReceiptsScreen';
 import { ServicesManagementScreen } from '../screens/ServicesManagementScreen';
 import { ShopScreen } from '../screens/ShopScreen';
 import { StockScreen } from '../screens/StockScreen';
+import { SynchronizationSettingsScreen } from '../screens/SynchronizationSettingsScreen';
 import { TeamScreen } from '../screens/TeamScreen';
 import { useAppStore } from '../store/AppStore';
 import { colors } from '../theme';
@@ -76,6 +77,7 @@ export function AppNavigation() {
         <Root.Screen name="Receipts" component={ReceiptsScreen} />
         <Root.Screen name="Notifications" component={NotificationsScreen} />
         <Root.Screen name="Profile" component={ProfileScreen} />
+        {role === 'admin' ? <Root.Screen name="SynchronizationSettings" component={SynchronizationSettingsScreen} /> : null}
         {role !== 'customer' ? <Root.Screen name="Shop" component={ShopScreen} /> : null}
         {role !== 'customer' ? <Root.Screen name="Team" component={TeamScreen} /> : null}
         {role === 'admin' ? <Root.Screen name="Branches" component={BranchesScreen} /> : null}

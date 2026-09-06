@@ -20,7 +20,7 @@ Store purchases retain one transaction ID across multiple flat clothing-sale lin
 
 ## Synchronization scheduling
 
-The administrator-owned `settings.synchronizationMode` value is stored in PostgreSQL with the workspace state and is shared with every role-scoped client. `reconnect` preserves immediate online mutation delivery and replays queued changes whenever connectivity returns. `daily` synchronizes on the first successful online use of each Africa/Harare day, then keeps later queueable operational changes on that device until the next day or a user chooses **Synchronize now**. Each device stores only its per-user last-success timestamp locally; the business setting and synchronized records remain database-backed. Account, security, and other online-only administration actions continue to require the API immediately.
+The administrator-owned `settings.synchronizationMode` value is stored in PostgreSQL but is a mobile-only scheduling policy. The web app ignores this setting: it sends online mutations immediately and automatically replays queued work whenever connectivity returns. On mobile, `reconnect` replays queued changes whenever connectivity returns, while `daily` synchronizes on the first successful online use of each Africa/Harare day and then keeps later queueable operational changes on that device until the next day or a user chooses **Synchronize now**. Each mobile device stores only its per-user last-success timestamp locally; the business setting and synchronized records remain database-backed. Account, security, and other online-only administration actions continue to require the API immediately.
 
 ## Backups and restoration
 
