@@ -545,6 +545,34 @@ async function mutate(user,action,req){
     state.activities.unshift(activity(target.branchId,user.id,`sold ${quantity} ${target.name}`,'inventory'));
     auditMetadata={itemId,quantity,listUnitPrice,negotiatedUnitPrice:normalizedUnitPrice,listTotal,total,paymentMethod,priceDifference:(integerCents(total)-integerCents(listTotal))/100,receiptId:receipt.id,receiptNumber:receipt.number};auditEntityType='clothing_sale';auditEntityId=id;
   }
+  else if(action.type==='RECORD_STORE_PURCHASE'){
+    if(user.role==='customer')throw fail('Not authorized.',403);
+    const incoming=action.purchase||{},id=textValue(incoming.id,128),branchId=textValue(incoming.branchId,128),customerId=textValue(incoming.customerId,128),paymentMethod=incoming.paymentMethod;
+    const incomingLines=Array.isArray(incoming.lines)?incoming.lines:[];
+    if(!id||!branchId||!incomingLines.length||incomingLines.length>100)throw fail('Add between 1 and 100 products to the purchase.');
+    if(!state.branches.some(item=>item.id===branchId&&item.active)||!canBranch(user,branchId))throw fail('Choose an open branch you can access.',403);
+    if(!new Set(['cash','ecocash','card','bank_transfer']).has(paymentMethod))throw fail('Choose a valid payment method.');
+    if(customerId&&!state.customers.some(customer=>customer.id===customerId))throw fail('Choose a valid customer.');
+    if(state.clothingSales.some(sale=>(sale.transactionId||sale.id)===id)||state.receipts.some(receipt=>receipt.kind==='store'&&receipt.transactionId===id))throw fail('Store transaction ID already exists.',409);
+    const itemIds=new Set(),lineIds=new Set(),validated=[];
+    for(const incomingLine of incomingLines){
+      const lineId=textValue(incomingLine?.id,128),itemId=textValue(incomingLine?.itemId,128),quantity=incomingLine?.quantity,unitPrice=incomingLine?.unitPrice,target=state.clothingItems.find(item=>item.id===itemId);
+      if(!lineId||!itemId||lineIds.has(lineId)||itemIds.has(itemId)||state.clothingSales.some(sale=>sale.id===lineId))throw fail('Every purchase line must have a unique product and line ID.',409);
+      if(!target||!target.active||target.branchId!==branchId)throw fail('Every product must be active and belong to the purchase branch.');
+      if(!Number.isInteger(quantity)||quantity<1)throw fail('Every purchase quantity must be a positive whole number.');
+      if(quantity>target.quantity)throw fail(`Only ${target.quantity} unit${target.quantity===1?' is':'s are'} of ${target.name} available.`,409);
+      if(typeof unitPrice!=='number'||!Number.isFinite(unitPrice)||unitPrice<0||unitPrice>1000000||!hasCentPrecision(unitPrice))throw fail('Every negotiated price must be between 0 and 1,000,000 with no more than two decimal places.');
+      lineIds.add(lineId);itemIds.add(itemId);validated.push({lineId,itemId,quantity,unitPrice:integerCents(unitPrice)/100,target});
+    }
+    const soldAt=new Date(clientOccurrenceTime(incoming.soldAt)).toISOString();
+    const sales=validated.map(({lineId,itemId,quantity,unitPrice,target})=>({id:lineId,transactionId:id,itemId,branchId,...(customerId?{customerId}:{}),quantity,listUnitPrice:integerCents(target.price)/100,unitPrice,total:integerCents(unitPrice*quantity)/100,paymentMethod,soldAt,soldByUserId:user.id}));
+    for(const {target,quantity} of validated)target.quantity-=quantity;
+    state.clothingSales.unshift(...sales);
+    const receipt=createStoreReceipt(state,sales[0]);state.receipts.unshift(receipt);
+    const units=sales.reduce((sum,sale)=>sum+sale.quantity,0),listTotal=sales.reduce((sum,sale)=>sum+integerCents(sale.listUnitPrice*sale.quantity),0)/100,total=sales.reduce((sum,sale)=>sum+integerCents(sale.total),0)/100;
+    state.activities.unshift(activity(branchId,user.id,`sold ${units} units across ${sales.length} store ${sales.length===1?'product':'products'}`,'inventory'));
+    auditMetadata={branchId,customerId:customerId||null,lineCount:sales.length,units,listTotal,total,paymentMethod,priceDifference:(integerCents(total)-integerCents(listTotal))/100,receiptId:receipt.id,receiptNumber:receipt.number};auditEntityType='store_purchase';auditEntityId=id;
+  }
   else if(action.type==='CLOCK_TOGGLE'){
     const target=state.users.find(x=>x.id===action.userId);
     if(!target||target.active===false||(user.role!=='admin'&&user.id!==target.id))throw fail('Not authorized.',403);

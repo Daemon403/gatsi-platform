@@ -69,7 +69,7 @@ const branchSummary = (state: AppState, branch: AppState['branches'][number], da
     lowStockItems: state.inventory.filter((item) => item.branchId === branch.id && item.quantity <= item.reorderLevel).length
       + state.clothingItems.filter((item) => item.branchId === branch.id && item.active !== false && item.quantity <= item.reorderLevel).length,
     operationalEvents: state.activities.filter((item) => item.branchId === branch.id && operationsDateKey(item.at) === date).length,
-    clothingSales: sales.length,
+    clothingSales: new Set(sales.map((sale) => sale.transactionId ?? sale.id)).size,
     clothingUnitsSold: sales.reduce((sum, sale) => sum + sale.quantity, 0),
     clothingRevenue: sales.reduce((sum, sale) => sum + integerCents(sale.total), 0) / 100,
   };

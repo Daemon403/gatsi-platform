@@ -95,31 +95,38 @@ export const createServiceReceipt = (state, payment) => {
 };
 
 export const createStoreReceipt = (state, sale, product) => {
-  const item = product ?? (state.clothingItems ?? []).find((entry) => entry.id === sale.itemId);
+  const transactionId = sale.transactionId ?? sale.id;
+  const relatedSales = [sale, ...normalizeClothingSales(state.clothingSales).filter((entry) => entry.id !== sale.id && (entry.transactionId ?? entry.id) === transactionId)];
   const branch = (state.branches ?? []).find((entry) => entry.id === sale.branchId);
   const issuer = (state.users ?? []).find((entry) => entry.id === sale.soldByUserId);
-  const total = integerCents(sale.total) / 100;
+  const customer = sale.customerId ? (state.customers ?? []).find((entry) => entry.id === sale.customerId) : undefined;
+  const total = relatedSales.reduce((sum, entry) => sum + integerCents(entry.total), 0) / 100;
   return {
-    id: receiptIdForTransaction('store', sale.id),
-    number: receiptNumberForTransaction('store', sale.id),
+    id: receiptIdForTransaction('store', transactionId),
+    number: receiptNumberForTransaction('store', transactionId),
     kind: 'store',
-    transactionId: sale.id,
+    transactionId,
     branchId: sale.branchId,
     branchName: branch?.name ?? branch?.shortName ?? 'Branch',
-    customerName: 'Walk-in customer',
+    ...(customer ? { customerId: customer.id } : {}),
+    customerName: customer?.name ?? 'Walk-in customer',
+    ...(customer?.phone ? { customerPhone: customer.phone } : {}),
     issuedAt: sale.soldAt,
     issuedByUserId: sale.soldByUserId,
     issuedByName: issuer?.name ?? 'Team member',
     paymentMethod: sale.paymentMethod,
-    lines: [{
-      id: sale.itemId,
-      description: item?.name ?? 'Store item',
-      detail: item ? `${item.sku} · ${item.size} · ${item.color}` : sale.itemId,
-      quantity: sale.quantity,
-      listUnitPrice: integerCents(sale.listUnitPrice) / 100,
-      unitPrice: integerCents(sale.unitPrice) / 100,
-      total,
-    }],
+    lines: relatedSales.map((entry) => {
+      const item = entry.id === sale.id && product ? product : (state.clothingItems ?? []).find((candidate) => candidate.id === entry.itemId);
+      return {
+        id: entry.id,
+        description: item?.name ?? 'Store item',
+        detail: item ? `${item.sku} · ${item.size} · ${item.color}` : entry.itemId,
+        quantity: entry.quantity,
+        listUnitPrice: integerCents(entry.listUnitPrice) / 100,
+        unitPrice: integerCents(entry.unitPrice) / 100,
+        total: integerCents(entry.total) / 100,
+      };
+    }),
     subtotal: total,
     discount: 0,
     fees: 0,
@@ -141,9 +148,10 @@ export const ensureTransactionReceipts = (state) => {
     }
   }
   for (const sale of normalizeClothingSales(state.clothingSales)) {
-    if (transactionKeys.has(`store:${sale.id}`)) continue;
+    const transactionId = sale.transactionId ?? sale.id;
+    if (transactionKeys.has(`store:${transactionId}`)) continue;
     receipts.push(createStoreReceipt(state, sale));
-    transactionKeys.add(`store:${sale.id}`);
+    transactionKeys.add(`store:${transactionId}`);
   }
   return receipts.sort((left, right) => right.issuedAt.localeCompare(left.issuedAt));
 };

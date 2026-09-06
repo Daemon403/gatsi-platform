@@ -228,6 +228,74 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
         }), ...state.activities],
       };
     }
+    case 'RECORD_STORE_PURCHASE': {
+      const { purchase } = action;
+      const lines = Array.isArray(purchase.lines) ? purchase.lines : [];
+      const itemIds = new Set(lines.map((line) => line.itemId));
+      const products = lines.map((line) => state.clothingItems.find((item) => item.id === line.itemId));
+      if (
+        !purchase.id
+        || !purchase.branchId
+        || !lines.length
+        || lines.length !== itemIds.size
+        || state.clothingSales.some((sale) => (sale.transactionId ?? sale.id) === purchase.id)
+        || !['cash', 'ecocash', 'card', 'bank_transfer'].includes(purchase.paymentMethod)
+        || (purchase.customerId && !state.customers.some((customer) => customer.id === purchase.customerId))
+        || products.some((item, index) => {
+          const line = lines[index];
+          return !item
+            || !item.active
+            || item.branchId !== purchase.branchId
+            || !line.id
+            || state.clothingSales.some((sale) => sale.id === line.id)
+            || !Number.isInteger(line.quantity)
+            || line.quantity < 1
+            || line.quantity > item.quantity
+            || typeof line.unitPrice !== 'number'
+            || !Number.isFinite(line.unitPrice)
+            || line.unitPrice < 0
+            || line.unitPrice > 1_000_000
+            || Math.abs(line.unitPrice - Number(line.unitPrice.toFixed(2))) > 1e-9;
+        })
+      ) return state;
+      const sales = lines.map((line, index) => {
+        const item = products[index]!;
+        return {
+          id: line.id,
+          transactionId: purchase.id,
+          itemId: item.id,
+          branchId: purchase.branchId,
+          customerId: purchase.customerId,
+          quantity: line.quantity,
+          listUnitPrice: item.price,
+          unitPrice: line.unitPrice,
+          total: Number((line.unitPrice * line.quantity).toFixed(2)),
+          paymentMethod: purchase.paymentMethod,
+          soldAt: purchase.soldAt,
+          soldByUserId: purchase.soldByUserId,
+        };
+      });
+      const nextState = {
+        ...state,
+        clothingItems: state.clothingItems.map((item) => {
+          const line = lines.find((entry) => entry.itemId === item.id);
+          return line ? { ...item, quantity: item.quantity - line.quantity } : item;
+        }),
+        clothingSales: [...sales, ...state.clothingSales],
+      };
+      const receipt = createStoreReceipt(nextState, sales[0]);
+      const units = sales.reduce((sum, sale) => sum + sale.quantity, 0);
+      return {
+        ...nextState,
+        receipts: [receipt, ...state.receipts.filter((entry) => entry.transactionId !== purchase.id || entry.kind !== 'store')],
+        activities: [activity(state, {
+          branchId: purchase.branchId,
+          userId: purchase.soldByUserId,
+          message: `sold ${units} units across ${sales.length} store ${sales.length === 1 ? 'product' : 'products'}`,
+          kind: 'inventory',
+        }), ...state.activities],
+      };
+    }
     case 'CLOCK_TOGGLE': {
       const user = state.users.find((item) => item.id === action.userId);
       if (!user || (action.clockedIn !== undefined && typeof action.clockedIn !== 'boolean')) return state;

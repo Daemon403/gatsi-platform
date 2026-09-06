@@ -8,6 +8,7 @@ import {
   type ClothingItem,
   type ClothingSale,
   type PaymentMethod,
+  type StorePurchase,
 } from '@gatsi/domain';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -48,6 +49,7 @@ const draftFromItem = (item: ClothingItem): ClothingDraft => ({
 type DraftValidation = { error: string } | { price: number; quantity: number; reorderLevel: number };
 type ClothingSaleWithListPrice = ClothingSale & { listUnitPrice: number };
 const paymentMethods: PaymentMethod[] = ['cash', 'ecocash', 'card', 'bank_transfer'];
+type CartLine = { itemId: string; quantity: number; unitPrice: number };
 
 const validateDraft = (draft: ClothingDraft): DraftValidation => {
   const price = Number(draft.price);
@@ -74,6 +76,7 @@ function ShopView() {
   const [saleItemId, setSaleItemId] = useState<string | null>(null);
   const [adjustingItemId, setAdjustingItemId] = useState<string | null>(null);
   const [busyItemId, setBusyItemId] = useState<string | null>(null);
+  const [cartLines, setCartLines] = useState<CartLine[]>([]);
 
   const clothingItems = (state.clothingItems ?? []).filter((item) => (
     (state.activeBranchId === 'all' || item.branchId === state.activeBranchId)
@@ -121,6 +124,18 @@ function ShopView() {
     );
   };
 
+  const addCartLine = (line: CartLine) => {
+    const item = state.clothingItems.find((entry) => entry.id === line.itemId);
+    const cartBranchId = state.clothingItems.find((entry) => entry.id === cartLines[0]?.itemId)?.branchId;
+    if (!item) return;
+    if (cartBranchId && cartBranchId !== item.branchId) {
+      Alert.alert('Different branch', 'Complete or clear the current cart before adding products from another branch.');
+      return;
+    }
+    setCartLines((current) => [...current.filter((entry) => entry.itemId !== line.itemId), line]);
+    setSaleItemId(null);
+  };
+
   return <Screen>
     <AppHeader title="Shop" subtitle="Manage retail items, stock and negotiated sales" />
 
@@ -134,6 +149,9 @@ function ShopView() {
         <Feather name={lowClothingItems.length > 0 ? 'alert-triangle' : 'shopping-bag'} size={25} color={lowClothingItems.length > 0 ? colors.amber : colors.primary} />
       </View>
     </View>
+
+    <SectionTitle title={`Customer cart (${cartLines.length})`} />
+    <Card style={styles.cartCard}><CartCheckout lines={cartLines} onRemove={(itemId) => setCartLines((current) => current.filter((line) => line.itemId !== itemId))} onClear={() => setCartLines([])} /></Card>
 
     <SectionTitle
       title="Clothing catalogue"
@@ -169,7 +187,7 @@ function ShopView() {
             onPress={() => { setSaleItemId((current) => current === item.id ? null : item.id); setEditingItemId(null); setAdjustingItemId(null); }}
             style={[styles.actionButton, styles.saleButton, (!item.active || item.quantity < 1 || Boolean(busyItemId)) && styles.disabled]}
           >
-            <Feather name="shopping-cart" size={15} color="#fff" /><Text style={styles.saleButtonText}>Record sale</Text>
+            <Feather name="shopping-cart" size={15} color="#fff" /><Text style={styles.saleButtonText}>{cartLines.some((line) => line.itemId === item.id) ? 'Update cart' : 'Add to cart'}</Text>
           </TouchableOpacity>
           {user.role === 'admin' ? <>
             <TouchableOpacity
@@ -188,7 +206,7 @@ function ShopView() {
             </TouchableOpacity>
           </> : null}
         </View>
-        {saleItemId === item.id ? <SaleRecorder item={item} onClose={() => setSaleItemId(null)} /> : null}
+        {saleItemId === item.id ? <SaleRecorder item={item} initial={cartLines.find((line) => line.itemId === item.id)} onAdd={addCartLine} onClose={() => setSaleItemId(null)} /> : null}
         {adjustingItemId === item.id && user.role === 'admin' ? <StockAdjustment item={item} onClose={() => setAdjustingItemId(null)} /> : null}
         {editingItemId === item.id && user.role === 'admin' ? <ClothingEditor item={item} onClose={() => setEditingItemId(null)} /> : null}
         {user.role === 'admin' ? <TouchableOpacity
@@ -215,7 +233,7 @@ function ShopView() {
           <Text style={styles.saleHistoryMeta}>{sale.quantity} sold · {shortDate(sale.soldAt)} · {seller?.name ?? 'Team member'}</Text>
           <Text style={styles.saleHistoryPrices}>List {money(listUnitPrice)} → final {money(sale.unitPrice)} each</Text>
         </View>
-        <View style={styles.saleHistoryAmount}><Text style={styles.saleHistoryTotal}>{money(sale.total)}</Text><Text style={styles.saleHistoryTotalLabel}>FINAL TOTAL</Text><TouchableOpacity accessibilityLabel={`Open receipt for ${item?.name ?? 'sale'}`} onPress={() => navigation.navigate('Receipt', { receiptId: receiptIdForTransaction('store', sale.id) })} style={styles.saleReceipt}><Feather name="file-text" size={15} color={colors.primary} /><Text style={styles.saleReceiptText}>Receipt</Text></TouchableOpacity></View>
+        <View style={styles.saleHistoryAmount}><Text style={styles.saleHistoryTotal}>{money(sale.total)}</Text><Text style={styles.saleHistoryTotalLabel}>FINAL TOTAL</Text><TouchableOpacity accessibilityLabel={`Open receipt for ${item?.name ?? 'sale'}`} onPress={() => navigation.navigate('Receipt', { receiptId: receiptIdForTransaction('store', sale.transactionId ?? sale.id) })} style={styles.saleReceipt}><Feather name="file-text" size={15} color={colors.primary} /><Text style={styles.saleReceiptText}>Receipt</Text></TouchableOpacity></View>
       </Card>;
     })}
     {!recentSales.length ? <Card><EmptyState icon="shopping-cart" title="No clothing sales" body="Completed clothing sales will appear here." /></Card> : null}
@@ -341,49 +359,80 @@ function ClothingFields({ draft, branches, disabled, onChange, showQuantity = fa
   </>;
 }
 
-function SaleRecorder({ item, onClose }: { item: ClothingItem; onClose: () => void }) {
+function CartCheckout({ lines, onRemove, onClear }: { lines: CartLine[]; onRemove: (itemId: string) => void; onClear: () => void }) {
   const { state, dispatch } = useAppStore();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const user = getActiveUser(state)!;
-  const [quantity, setQuantity] = useState('1');
-  const [finalUnitPrice, setFinalUnitPrice] = useState(String(item.price));
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [customerId, setCustomerId] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const items = lines.map((line) => ({ line, item: state.clothingItems.find((entry) => entry.id === line.itemId) })).filter((entry): entry is { line: CartLine; item: ClothingItem } => Boolean(entry.item));
+  const customer = state.customers.find((entry) => entry.id === customerId);
+  const matches = customerSearch.trim().length > 0 ? state.customers.filter((entry) => `${entry.name} ${entry.phone} ${entry.email}`.toLowerCase().includes(customerSearch.trim().toLowerCase())).slice(0, 6) : [];
+  const listTotal = Number(items.reduce((sum, entry) => sum + entry.item.price * entry.line.quantity, 0).toFixed(2));
+  const finalTotal = Number(items.reduce((sum, entry) => sum + entry.line.unitPrice * entry.line.quantity, 0).toFixed(2));
 
-  const record = async () => {
-    if (saving) return;
-    const parsedQuantity = Number(quantity);
-    const parsedFinalUnitPrice = Number(finalUnitPrice);
-    if (!Number.isInteger(parsedQuantity) || parsedQuantity < 1) return setError('Sale quantity must be a positive whole number.');
-    if (parsedQuantity > item.quantity) return setError(`Only ${item.quantity} unit${item.quantity === 1 ? '' : 's'} are currently in stock.`);
-    if (!finalUnitPrice.trim() || !Number.isFinite(parsedFinalUnitPrice) || parsedFinalUnitPrice < 0 || parsedFinalUnitPrice > 1_000_000 || Math.abs(parsedFinalUnitPrice - Number(parsedFinalUnitPrice.toFixed(2))) > 1e-9) return setError('Enter a valid negotiated price between zero and 1,000,000 with no more than two decimal places.');
-    const total = Number((parsedQuantity * parsedFinalUnitPrice).toFixed(2));
-    const sale: ClothingSaleWithListPrice = {
-      id: makeId('clothing-sale'),
-      itemId: item.id,
-      branchId: item.branchId,
-      quantity: parsedQuantity,
-      listUnitPrice: item.price,
-      unitPrice: parsedFinalUnitPrice,
-      total,
+  const checkout = async () => {
+    if (saving || !items.length) return;
+    const unavailable = items.find(({ item, line }) => !item.active || line.quantity > item.quantity);
+    if (unavailable) return setError(`${unavailable.item.name} no longer has enough available stock.`);
+    const transactionId = makeId('store-purchase');
+    const purchase: StorePurchase = {
+      id: transactionId,
+      branchId: items[0].item.branchId,
+      ...(customerId ? { customerId } : {}),
       paymentMethod,
       soldAt: new Date().toISOString(),
       soldByUserId: user.id,
+      lines: items.map(({ item, line }) => ({ id: makeId('clothing-sale'), itemId: item.id, quantity: line.quantity, unitPrice: line.unitPrice })),
     };
     setSaving(true);
     setError('');
     try {
       const selectedBranchId = state.activeBranchId;
-      const remoteState = await apiAction({ type: 'RECORD_CLOTHING_SALE', sale }, state);
+      const remoteState = await apiAction({ type: 'RECORD_STORE_PURCHASE', purchase }, state);
       dispatch({ type: 'HYDRATE', state: { ...remoteState, activeBranchId: selectedBranchId } });
-      onClose();
-      navigation.navigate('Receipt', { receiptId: receiptIdForTransaction('store', sale.id) });
+      onClear();
+      navigation.navigate('Receipt', { receiptId: receiptIdForTransaction('store', transactionId) });
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'The sale could not be recorded.');
+      setError(reason instanceof Error ? reason.message : 'The customer purchase could not be completed.');
     } finally {
       setSaving(false);
     }
+  };
+
+  if (!items.length) return <EmptyState icon="shopping-cart" title="The cart is empty" body="Choose quantities and negotiated prices from different products below, then add them to this customer purchase." />;
+
+  return <View style={styles.cartContent}>
+    {items.map(({ item, line }) => <View key={item.id} style={styles.cartLine}>
+      <View style={styles.flex}><Text style={styles.cartLineName}>{item.name}</Text><Text style={styles.cartLineMeta}>{line.quantity} × {money(line.unitPrice)} · listed at {money(item.price)} each</Text></View>
+      <Text style={styles.cartLineTotal}>{money(Number((line.quantity * line.unitPrice).toFixed(2)))}</Text>
+      <TouchableOpacity accessibilityLabel={`Remove ${item.name} from cart`} disabled={saving} onPress={() => onRemove(item.id)} style={styles.cartRemove}><Feather name="x" size={14} color={colors.red} /></TouchableOpacity>
+    </View>)}
+    <Input label="Customer name or phone" icon="user" value={customerSearch} editable={!saving} onChangeText={(value) => { setCustomerSearch(value); setCustomerId(''); }} placeholder="Optional for walk-in sale" />
+    {customer ? <View style={styles.selectedCustomer}><Feather name="check-circle" size={16} color={colors.primary} /><View style={styles.flex}><Text style={styles.selectedCustomerName}>{customer.name}</Text><Text style={styles.selectedCustomerMeta}>{customer.phone}</Text></View><TouchableOpacity onPress={() => { setCustomerId(''); setCustomerSearch(''); }}><Feather name="x" size={16} color={colors.muted} /></TouchableOpacity></View> : matches.map((match) => <TouchableOpacity key={match.id} disabled={saving} onPress={() => { setCustomerId(match.id); setCustomerSearch(match.name); }} style={styles.customerMatch}><Feather name="user" size={15} color={colors.primary} /><View style={styles.flex}><Text style={styles.customerMatchName}>{match.name}</Text><Text style={styles.customerMatchMeta}>{match.phone} · {match.email || 'No email'}</Text></View></TouchableOpacity>)}
+    <Text style={styles.fieldLabel}>Payment method *</Text>
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.choiceRow}>{paymentMethods.map((method) => <Choice key={method} label={method.replaceAll('_', ' ')} selected={paymentMethod === method} disabled={saving} onPress={() => setPaymentMethod(method)} />)}</ScrollView>
+    <View style={styles.cartTotals}><Text>Initial/list total <Text style={styles.cartListTotal}>{money(listTotal)}</Text></Text><Text>Final negotiated total <Text style={styles.cartFinalTotal}>{money(finalTotal)}</Text></Text></View>
+    {error ? <ErrorNotice message={error} /> : null}
+    <View style={styles.formActions}><PrimaryButton title="Clear" icon="trash-2" secondary compact disabled={saving} onPress={onClear} /><View style={styles.flex}><PrimaryButton title="Complete purchase" icon="check" compact loading={saving} onPress={() => void checkout()} /></View></View>
+  </View>;
+}
+
+function SaleRecorder({ item, initial, onAdd, onClose }: { item: ClothingItem; initial?: CartLine; onAdd: (line: CartLine) => void; onClose: () => void }) {
+  const [quantity, setQuantity] = useState(String(initial?.quantity ?? 1));
+  const [finalUnitPrice, setFinalUnitPrice] = useState(String(initial?.unitPrice ?? item.price));
+  const [error, setError] = useState('');
+
+  const add = () => {
+    const parsedQuantity = Number(quantity);
+    const parsedFinalUnitPrice = Number(finalUnitPrice);
+    if (!Number.isInteger(parsedQuantity) || parsedQuantity < 1) return setError('Sale quantity must be a positive whole number.');
+    if (parsedQuantity > item.quantity) return setError(`Only ${item.quantity} unit${item.quantity === 1 ? '' : 's'} are currently in stock.`);
+    if (!finalUnitPrice.trim() || !Number.isFinite(parsedFinalUnitPrice) || parsedFinalUnitPrice < 0 || parsedFinalUnitPrice > 1_000_000 || Math.abs(parsedFinalUnitPrice - Number(parsedFinalUnitPrice.toFixed(2))) > 1e-9) return setError('Enter a valid negotiated price between zero and 1,000,000 with no more than two decimal places.');
+    onAdd({ itemId: item.id, quantity: parsedQuantity, unitPrice: parsedFinalUnitPrice });
   };
 
   const parsedQuantity = Number(quantity);
@@ -394,14 +443,12 @@ function SaleRecorder({ item, onClose }: { item: ClothingItem; onClose: () => vo
   const finalTotal = Number((validQuantity * validFinalUnitPrice).toFixed(2));
   const difference = Number((listTotal - finalTotal).toFixed(2));
   return <View style={styles.inlineForm}>
-    <FormHeading icon="shopping-cart" title="Record negotiated sale" body={`${item.quantity} currently in stock. The original list price is preserved with the final selling price.`} />
+    <FormHeading icon="shopping-cart" title="Add product to cart" body={`${item.quantity} currently in stock. Set this product's quantity and negotiated unit price.`} />
     <View style={styles.twoColumns}>
-      <Input style={styles.halfField} label="Quantity *" value={quantity} editable={!saving} onChangeText={(value) => { setQuantity(value); setError(''); }} keyboardType="number-pad" />
+      <Input style={styles.halfField} label="Quantity *" value={quantity} onChangeText={(value) => { setQuantity(value); setError(''); }} keyboardType="number-pad" />
       <View style={styles.halfField}><Text style={styles.fieldLabel}>Initial list price</Text><Text style={styles.fixedPrice}>{money(item.price)}</Text></View>
     </View>
-    <Input label="Final negotiated unit price *" value={finalUnitPrice} editable={!saving} onChangeText={(value) => { setFinalUnitPrice(value); setError(''); }} keyboardType="decimal-pad" />
-    <Text style={styles.fieldLabel}>Payment method *</Text>
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.choiceRow}>{paymentMethods.map((method) => <Choice key={method} label={method.replaceAll('_', ' ')} selected={paymentMethod === method} disabled={saving} onPress={() => setPaymentMethod(method)} />)}</ScrollView>
+    <Input label="Final negotiated unit price *" value={finalUnitPrice} onChangeText={(value) => { setFinalUnitPrice(value); setError(''); }} keyboardType="decimal-pad" />
     <View style={styles.priceComparison}>
       <View><Text style={styles.comparisonLabel}>LIST TOTAL</Text><Text style={styles.comparisonList}>{money(listTotal)}</Text></View>
       <Feather name="arrow-right" size={18} color={colors.muted} />
@@ -409,7 +456,7 @@ function SaleRecorder({ item, onClose }: { item: ClothingItem; onClose: () => vo
     </View>
     {difference !== 0 ? <Text style={[styles.negotiationDifference, difference < 0 && styles.negotiationMarkup]}>{difference > 0 ? `${money(difference)} below list price` : `${money(Math.abs(difference))} above list price`}</Text> : null}
     {error ? <ErrorNotice message={error} /> : null}
-    <View style={styles.formActions}><PrimaryButton title="Cancel" icon="x" secondary compact disabled={saving} onPress={onClose} /><View style={styles.flex}><PrimaryButton title="Complete sale" icon="check" compact loading={saving} onPress={() => void record()} /></View></View>
+    <View style={styles.formActions}><PrimaryButton title="Cancel" icon="x" secondary compact onPress={onClose} /><View style={styles.flex}><PrimaryButton title={initial ? 'Update cart' : 'Add to cart'} icon="shopping-cart" compact onPress={add} /></View></View>
   </View>;
 }
 
@@ -471,6 +518,22 @@ const styles = StyleSheet.create({
   heroIcon: { width: 50, height: 50, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
   heroIconAlert: { backgroundColor: colors.amberSoft },
   formCard: { padding: 15, marginBottom: 14 },
+  cartCard: { padding: 15, marginBottom: 12 },
+  cartContent: { gap: 12 },
+  cartLine: { minHeight: 58, padding: 11, borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, flexDirection: 'row', alignItems: 'center', gap: 9 },
+  cartLineName: { color: colors.ink, fontSize: 12, fontWeight: '900' },
+  cartLineMeta: { color: colors.muted, fontSize: 9, marginTop: 4 },
+  cartLineTotal: { color: colors.primary, fontSize: 11, fontWeight: '900' },
+  cartRemove: { width: 30, height: 30, borderRadius: 9, backgroundColor: colors.redSoft, alignItems: 'center', justifyContent: 'center' },
+  selectedCustomer: { minHeight: 54, padding: 11, borderWidth: 1, borderColor: colors.primary, borderRadius: radius.sm, backgroundColor: colors.primaryLight, flexDirection: 'row', alignItems: 'center', gap: 9 },
+  selectedCustomerName: { color: colors.ink, fontSize: 11, fontWeight: '900' },
+  selectedCustomerMeta: { color: colors.muted, fontSize: 9, marginTop: 3 },
+  customerMatch: { minHeight: 52, padding: 10, borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, flexDirection: 'row', alignItems: 'center', gap: 9 },
+  customerMatchName: { color: colors.ink, fontSize: 11, fontWeight: '800' },
+  customerMatchMeta: { color: colors.muted, fontSize: 9, marginTop: 3 },
+  cartTotals: { padding: 12, borderRadius: radius.sm, backgroundColor: colors.background, gap: 7 },
+  cartListTotal: { color: colors.ink, fontWeight: '900' },
+  cartFinalTotal: { color: colors.primary, fontWeight: '900' },
   productCard: { padding: 15, marginBottom: 12 },
   inactiveCard: { opacity: 0.72 },
   productTop: { flexDirection: 'row', alignItems: 'center', gap: 10 },

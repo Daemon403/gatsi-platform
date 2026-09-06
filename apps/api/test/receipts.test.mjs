@@ -39,6 +39,21 @@ test('store sales preserve list and negotiated prices on their receipt', () => {
   assert.equal(receipt.amountPaid, 24);
 });
 
+test('one store purchase can produce a single customer receipt with different products', () => {
+  const sales = [
+    { id: 'line-1', transactionId: 'purchase-1', customerId: 'customer-1', itemId: 'item-1', branchId: 'branch-1', quantity: 2, listUnitPrice: 15, unitPrice: 12, total: 24, paymentMethod: 'cash', soldAt: '2026-09-02T10:00:00.000Z', soldByUserId: 'user-1' },
+    { id: 'line-2', transactionId: 'purchase-1', customerId: 'customer-1', itemId: 'item-2', branchId: 'branch-1', quantity: 1, listUnitPrice: 20, unitPrice: 18, total: 18, paymentMethod: 'cash', soldAt: '2026-09-02T10:00:00.000Z', soldByUserId: 'user-1' },
+  ];
+  const purchaseState = { ...state, clothingItems: [...state.clothingItems, { id: 'item-2', name: 'Apron', sku: 'APR-1', size: 'One size', color: 'Green' }], clothingSales: sales };
+  const receipt = createStoreReceipt(purchaseState, sales[0]);
+  assert.equal(receipt.transactionId, 'purchase-1');
+  assert.equal(receipt.customerName, 'Rudo Customer');
+  assert.equal(receipt.lines.length, 2);
+  assert.equal(receipt.total, 42);
+  const backfilled = ensureTransactionReceipts(purchaseState).filter((item) => item.kind === 'store');
+  assert.equal(backfilled.length, 1);
+});
+
 test('receipt backfill creates exactly one receipt for every transaction', () => {
   const sale = { id: 'sale-1', itemId: 'item-1', branchId: 'branch-1', quantity: 1, listUnitPrice: 15, unitPrice: 12, total: 12, paymentMethod: 'cash', soldAt: '2026-09-02T09:00:00.000Z', soldByUserId: 'user-1' };
   const withTransactions = { ...state, clothingSales: [sale] };

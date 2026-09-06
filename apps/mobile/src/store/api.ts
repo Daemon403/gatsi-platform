@@ -271,6 +271,7 @@ const offlineActionTypes = new Set<AppAction['type']>([
   'CREATE_CLOTHING_ITEM',
   'ADJUST_CLOTHING_STOCK',
   'RECORD_CLOTHING_SALE',
+  'RECORD_STORE_PURCHASE',
   'CREATE_BRANCH',
   'CREATE_SERVICE',
 ]);

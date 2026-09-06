@@ -12,6 +12,8 @@ Migration `008_fresh_admin_only_state.sql` is a deliberate one-time clean-slate 
 
 Migration `009_transaction_receipts.sql` adds the receipt collection and advances the client data revision. API startup backfills one immutable receipt for each valid legacy service payment and clothing sale, while all new transactions create their receipt atomically with the payment or sale.
 
+Store purchases retain one transaction ID across multiple flat clothing-sale lines. Every line must reference a distinct active product from the same open branch. The API validates all quantities and negotiated prices before reducing any stock, then creates one customer-linked receipt containing every product line. Legacy single-product sales remain readable and retain their original receipts.
+
 ## Live operations reporting
 
 `GET /api/admin/operations-summaries/current` calculates today's Africa/Harare order, service-payment and store-transaction totals directly from the latest `app_state` row. It is read-only and does not replace or create a permanent daily snapshot. Web and mobile refresh it once per minute while the reporting view is open and retain an immediate calculation from the authenticated local cache for offline visibility. The scheduled completed-day workflow remains the authoritative historical record.

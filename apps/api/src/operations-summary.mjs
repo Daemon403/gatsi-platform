@@ -98,7 +98,7 @@ export function buildDailyOperationsSummary(state, requestedDate = harareDateKey
       lowStockItems: inventory.filter((item) => item.branchId === branch.id && Number(item.quantity) <= Number(item.reorderLevel)).length
         + clothingItems.filter((item) => item.branchId === branch.id && item.active !== false && Number(item.quantity) <= Number(item.reorderLevel)).length,
       operationalEvents: activities.filter((item) => item.branchId === branch.id && harareDateKey(item.at) === date).length,
-      clothingSales: branchClothingSales.length,
+      clothingSales: new Set(branchClothingSales.map((sale) => sale.transactionId ?? sale.id)).size,
       clothingUnitsSold: branchClothingSales.reduce((sum, sale) => sum + Number(sale.quantity ?? 0), 0),
       clothingRevenue: centsTotal(branchClothingSales, (sale) => sale.total),
     };

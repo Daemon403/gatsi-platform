@@ -181,8 +181,10 @@ export type ClothingItemUpdate = Pick<ClothingItem, 'branchId' | 'name' | 'sku' 
 
 export type ClothingSale = {
   id: string;
+  transactionId?: string;
   itemId: string;
   branchId: string;
+  customerId?: string;
   quantity: number;
   listUnitPrice: number;
   unitPrice: number;
@@ -190,6 +192,23 @@ export type ClothingSale = {
   paymentMethod: PaymentMethod;
   soldAt: string;
   soldByUserId: string;
+};
+
+export type StorePurchaseLine = {
+  id: string;
+  itemId: string;
+  quantity: number;
+  unitPrice: number;
+};
+
+export type StorePurchase = {
+  id: string;
+  branchId: string;
+  customerId?: string;
+  paymentMethod: PaymentMethod;
+  soldAt: string;
+  soldByUserId: string;
+  lines: StorePurchaseLine[];
 };
 
 export type ReceiptKind = 'service' | 'store';
@@ -325,6 +344,7 @@ export type AppAction =
   | { type: 'UPDATE_CLOTHING_ITEM'; itemId: string; updates: ClothingItemUpdate }
   | { type: 'ADJUST_CLOTHING_STOCK'; itemId: string; delta: number; userId: string }
   | { type: 'RECORD_CLOTHING_SALE'; sale: ClothingSale }
+  | { type: 'RECORD_STORE_PURCHASE'; purchase: StorePurchase }
   | { type: 'CLOCK_TOGGLE'; userId: string; clockedIn?: boolean }
   | { type: 'CREATE_CUSTOMER'; customer: Customer; user: User }
   | { type: 'CREATE_BRANCH'; branch: Branch }

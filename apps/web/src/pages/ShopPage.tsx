@@ -7,6 +7,7 @@ import {
   type ClothingItem,
   type ClothingItemUpdate,
   type PaymentMethod,
+  type StorePurchase,
 } from '@gatsi/domain';
 import {
   AlertTriangle,
@@ -79,6 +80,7 @@ export function ShopPage() {
   const lowClothing = clothing.filter((item) => item.active && item.quantity <= item.reorderLevel);
   const retailValue = clothing.filter((item) => item.active).reduce((sum, item) => sum + item.quantity * item.price, 0);
   const salesRevenue = clothingSales.reduce((sum, sale) => sum + sale.total, 0);
+  const transactionCount = new Set(clothingSales.map((sale) => sale.transactionId ?? sale.id)).size;
 
   const [showCreate, setShowCreate] = useState(false);
   const [createDraft, setCreateDraft] = useState<ClothingDraft>(() => blankDraft(defaultBranchId));
@@ -86,7 +88,9 @@ export function ShopPage() {
   const [editDraft, setEditDraft] = useState<ClothingItemUpdate | null>(null);
   const [saleQuantities, setSaleQuantities] = useState<Record<string, string>>({});
   const [negotiatedPrices, setNegotiatedPrices] = useState<Record<string, string>>({});
-  const [saleMethods, setSaleMethods] = useState<Record<string, PaymentMethod>>({});
+  const [cartItemIds, setCartItemIds] = useState<string[]>([]);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
+  const [customerId, setCustomerId] = useState('');
   const [busyKey, setBusyKey] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -185,43 +189,55 @@ export function ShopPage() {
     );
   };
 
-  const recordSale = async (item: ClothingItem) => {
+  const addToCart = (item: ClothingItem) => {
     const quantity = Number(saleQuantities[item.id] ?? '1');
     const finalPriceText = negotiatedPrices[item.id] ?? String(item.price);
     const finalUnitPrice = Number(finalPriceText);
-    const paymentMethod = saleMethods[item.id] ?? 'cash';
     if (!Number.isInteger(quantity) || quantity < 1) { setError('Sale quantity must be a whole number of at least one.'); return; }
     if (quantity > item.quantity) { setError(`Only ${item.quantity} ${item.name} item(s) are in stock.`); return; }
     if (!finalPriceText.trim() || !Number.isFinite(finalUnitPrice) || finalUnitPrice < 0 || finalUnitPrice > 1_000_000 || Math.abs(finalUnitPrice - roundMoney(finalUnitPrice)) > 1e-9) { setError('Enter a negotiated unit price from 0 to 1,000,000 using no more than two decimal places.'); return; }
+    const cartBranchId = state.clothingItems.find((entry) => entry.id === cartItemIds[0])?.branchId;
+    if (cartBranchId && cartBranchId !== item.branchId) { setError('Complete or clear the current cart before adding products from another branch.'); return; }
+    setCartItemIds((current) => current.includes(item.id) ? current : [...current, item.id]);
+    setError('');
+    setMessage(`${item.name} ${cartItemIds.includes(item.id) ? 'was updated in' : 'was added to'} the customer cart.`);
+  };
 
-    const listUnitPrice = item.price;
-    const listTotal = roundMoney(listUnitPrice * quantity);
-    const finalTotal = roundMoney(finalUnitPrice * quantity);
-    const sale = {
-      id: makeId('clothing-sale'),
-      itemId: item.id,
-      branchId: item.branchId,
-      quantity,
-      listUnitPrice,
-      unitPrice: finalUnitPrice,
-      total: finalTotal,
+  const checkout = async () => {
+    const cartItems = cartItemIds.map((id) => state.clothingItems.find((item) => item.id === id)).filter((item): item is ClothingItem => Boolean(item));
+    if (!cartItems.length) { setError('Add at least one product to the customer cart.'); return; }
+    for (const item of cartItems) {
+      const quantity = Number(saleQuantities[item.id] ?? '1');
+      const unitPrice = Number(negotiatedPrices[item.id] ?? String(item.price));
+      if (!item.active || !Number.isInteger(quantity) || quantity < 1 || quantity > item.quantity) { setError(`Enter an available whole-number quantity for ${item.name}.`); return; }
+      if (!Number.isFinite(unitPrice) || unitPrice < 0 || unitPrice > 1_000_000 || Math.abs(unitPrice - roundMoney(unitPrice)) > 1e-9) { setError(`Enter a valid negotiated price for ${item.name}.`); return; }
+    }
+    const purchaseId = makeId('store-purchase');
+    const purchase: StorePurchase = {
+      id: purchaseId,
+      branchId: cartItems[0].branchId,
+      ...(customerId ? { customerId } : {}),
       paymentMethod,
       soldAt: new Date().toISOString(),
       soldByUserId: user.id,
+      lines: cartItems.map((item) => ({
+        id: makeId('clothing-sale'),
+        itemId: item.id,
+        quantity: Number(saleQuantities[item.id] ?? '1'),
+        unitPrice: Number(negotiatedPrices[item.id] ?? String(item.price)),
+      })),
     };
     const remoteState = await runAction(
-      { type: 'RECORD_CLOTHING_SALE', sale },
-      `sale-${item.id}`,
-      `${quantity} × ${item.name} sold for ${money(finalTotal)}${finalTotal === listTotal ? '' : ` (listed at ${money(listTotal)})`}.`,
+      { type: 'RECORD_STORE_PURCHASE', purchase },
+      `purchase-${purchaseId}`,
+      `${purchase.lines.length} product ${purchase.lines.length === 1 ? 'type' : 'types'} sold in one customer purchase.`,
     );
     if (remoteState) {
-      setSaleQuantities((current) => ({ ...current, [item.id]: '1' }));
-      setNegotiatedPrices((current) => {
-        const next = { ...current };
-        delete next[item.id];
-        return next;
-      });
-      navigate(`/receipts/${receiptIdForTransaction('store', sale.id)}`);
+      setCartItemIds([]);
+      setSaleQuantities({});
+      setNegotiatedPrices({});
+      setCustomerId('');
+      navigate(`/receipts/${receiptIdForTransaction('store', purchaseId)}`);
     }
   };
 
@@ -252,6 +268,11 @@ export function ShopPage() {
     </Card>;
   };
 
+  const cartItems = cartItemIds.map((id) => state.clothingItems.find((item) => item.id === id)).filter((item): item is ClothingItem => Boolean(item));
+  const cartListTotal = roundMoney(cartItems.reduce((sum, item) => sum + item.price * Number(saleQuantities[item.id] ?? '1'), 0));
+  const cartFinalTotal = roundMoney(cartItems.reduce((sum, item) => sum + Number(negotiatedPrices[item.id] ?? String(item.price)) * Number(saleQuantities[item.id] ?? '1'), 0));
+  const cartCustomers = state.customers;
+
   return <>
     <PageTitle
       eyebrow="Retail"
@@ -272,6 +293,23 @@ export function ShopPage() {
     {showCreate && isAdmin ? itemForm('create') : null}
     {editingId && isAdmin ? itemForm('edit') : null}
 
+    <div className="section-heading retail-section-heading shop-cart-heading"><div><span className="eyebrow">Customer checkout</span><h2>Multi-product cart</h2></div><small>{cartItems.length} product {cartItems.length === 1 ? 'type' : 'types'}</small></div>
+    <Card className="shop-cart-card">
+      {!cartItems.length ? <Empty title="The customer cart is empty" body="Set a quantity and negotiated price on any products below, then add them to this purchase." /> : <>
+        <div className="shop-cart-lines">{cartItems.map((item) => {
+          const quantity = Number(saleQuantities[item.id] ?? '1');
+          const finalUnitPrice = Number(negotiatedPrices[item.id] ?? String(item.price));
+          return <div className="shop-cart-line" key={item.id}><div><strong>{item.name}</strong><small>{item.sku} · {item.size} · {item.color}</small></div><span>{quantity} × {money(finalUnitPrice)}</span><b>{money(roundMoney(quantity * finalUnitPrice))}</b><button type="button" disabled={Boolean(busyKey)} onClick={() => setCartItemIds((current) => current.filter((id) => id !== item.id))} aria-label={`Remove ${item.name} from cart`}><X /></button></div>;
+        })}</div>
+        <div className="shop-cart-controls">
+          <FormField label="Customer" hint="Select an account so the customer can see this receipt."><select disabled={Boolean(busyKey)} value={customerId} onChange={(event) => setCustomerId(event.target.value)}><option value="">Walk-in customer</option>{cartCustomers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name} · {customer.phone}</option>)}</select></FormField>
+          <div className="shop-payment-method"><span>Payment method</span><div className="method-grid">{paymentMethods.map((method) => <button type="button" disabled={Boolean(busyKey)} className={paymentMethod === method ? 'selected' : ''} key={method} onClick={() => setPaymentMethod(method)}>{method.replaceAll('_', ' ')}</button>)}</div></div>
+        </div>
+        <div className="shop-cart-total"><span>Initial/list total <b>{money(cartListTotal)}</b></span><span>Final negotiated total <strong>{money(cartFinalTotal)}</strong></span></div>
+        <div className="shop-cart-actions"><Button variant="ghost" disabled={Boolean(busyKey)} onClick={() => { setCartItemIds([]); setCustomerId(''); }}>Clear cart</Button><Button disabled={Boolean(busyKey)} onClick={() => void checkout()}><ShoppingCart /> {busyKey.startsWith('purchase-') ? 'Completing purchase...' : 'Complete customer purchase'}</Button></div>
+      </>}
+    </Card>
+
     <div className="section-heading retail-section-heading"><div><span className="eyebrow">Store catalogue</span><h2>Clothing items</h2></div><small>{clothing.filter((item) => item.active).length} active · {clothing.filter((item) => !item.active).length} archived</small></div>
     <div className="retail-grid">
       {clothing.map((item) => {
@@ -285,7 +323,6 @@ export function ShopPage() {
         const listTotal = canPreview ? roundMoney(item.price * previewQuantity) : 0;
         const finalTotal = canPreview ? roundMoney(previewFinalPrice * previewQuantity) : 0;
         const difference = roundMoney(listTotal - finalTotal);
-        const itemBusy = busyKey.endsWith(item.id);
         return <Card className={`retail-card ${item.active ? '' : 'retail-card-archived'}`} key={item.id}>
           <div className="retail-card-head"><span className={isLow && item.active ? 'low' : ''}><Shirt /></span><div><small>{item.category} · {item.sku}</small><strong>{item.name}</strong><p>{item.color} · {item.size} · {branch?.shortName ?? 'Unknown branch'}</p></div><i className={item.active ? '' : 'inactive'}>{item.active ? 'Active' : 'Archived'}</i></div>
           <div className="retail-stats"><span><small>In stock</small><strong>{item.quantity}</strong></span><span><small>Reorder at</small><strong>{item.reorderLevel}</strong></span><span><small>List price</small><strong>{money(item.price)}</strong></span></div>
@@ -293,9 +330,8 @@ export function ShopPage() {
           {item.active ? <div className="retail-sale shop-sale">
             <label><span>Quantity sold</span><input required type="number" min="1" max={Math.max(item.quantity, 1)} step="1" disabled={Boolean(busyKey) || item.quantity === 0} value={quantityText} onChange={(event) => { setSaleQuantities((current) => ({ ...current, [item.id]: event.target.value })); setError(''); }} /></label>
             <label><span>Final negotiated price</span><input required type="number" min="0" max="1000000" step="0.01" disabled={Boolean(busyKey) || item.quantity === 0} value={negotiatedPriceText} onChange={(event) => { setNegotiatedPrices((current) => ({ ...current, [item.id]: event.target.value })); setError(''); }} /></label>
-            <div className="shop-payment-method"><span>Payment method</span><div className="method-grid">{paymentMethods.map((paymentMethod) => <button type="button" disabled={Boolean(busyKey) || item.quantity === 0} className={(saleMethods[item.id] ?? 'cash') === paymentMethod ? 'selected' : ''} key={paymentMethod} onClick={() => setSaleMethods((current) => ({ ...current, [item.id]: paymentMethod }))}>{paymentMethod.replaceAll('_', ' ')}</button>)}</div></div>
             <div className="shop-sale-preview"><span>Initial total <b>{canPreview ? money(listTotal) : '—'}</b></span><span>Final total <strong>{canPreview ? money(finalTotal) : '—'}</strong></span>{canPreview && difference !== 0 ? <small className={difference > 0 ? 'discount' : 'markup'}>{difference > 0 ? `${money(difference)} below list` : `${money(Math.abs(difference))} above list`}</small> : null}</div>
-            <Button disabled={Boolean(busyKey) || item.quantity === 0} onClick={() => recordSale(item)}><ShoppingCart /> {itemBusy ? 'Saving...' : 'Record negotiated sale'}</Button>
+            <Button disabled={Boolean(busyKey) || item.quantity === 0} onClick={() => addToCart(item)}><ShoppingCart /> {cartItemIds.includes(item.id) ? 'Update cart item' : 'Add to customer cart'}</Button>
           </div> : null}
           {isAdmin ? <div className="retail-admin-actions">
             {item.active ? <div className="retail-adjust"><span>Adjust stock</span><button aria-label={`Remove one ${item.name}`} disabled={Boolean(busyKey) || item.quantity === 0} onClick={() => adjustClothing(item, -1)}><Minus /></button><button className="add" aria-label={`Add one ${item.name}`} disabled={Boolean(busyKey)} onClick={() => adjustClothing(item, 1)}><Plus /></button></div> : <span className="retail-history-note">Sales history retained</span>}
@@ -307,7 +343,7 @@ export function ShopPage() {
       {!clothing.length ? <Card className="retail-empty"><Empty title="No store products found" body={isAdmin ? 'Add the first clothing item for the selected branch.' : 'There are no active store products at this branch.'} /></Card> : null}
     </div>
 
-    <div className="section-heading retail-section-heading shop-history-heading"><div><span className="eyebrow">Sales history</span><h2>List price vs final sold price</h2></div><small>{clothingSales.length} recorded sale{clothingSales.length === 1 ? '' : 's'}</small></div>
+    <div className="section-heading retail-section-heading shop-history-heading"><div><span className="eyebrow">Sales history</span><h2>List price vs final sold price</h2></div><small>{transactionCount} recorded {transactionCount === 1 ? 'transaction' : 'transactions'}</small></div>
     <div className="shop-sales-table card">
       <div className="shop-sales-head"><span>Product</span><span>Date</span><span>Qty</span><span>Initial / list</span><span>Final negotiated</span><span>Final total</span><span>Sold by</span><span>Receipt</span></div>
       {clothingSales.slice(0, 100).map((sale) => {
@@ -323,7 +359,7 @@ export function ShopPage() {
           <strong className="shop-final-price">{money(sale.unitPrice)} <small>each</small></strong>
           <strong>{money(sale.total)}</strong>
           <span>{seller?.name ?? 'Unknown user'}</span>
-          <Link className="shop-receipt-link" to={`/receipts/${receiptIdForTransaction('store', sale.id)}`}><ReceiptText /> View</Link>
+          <Link className="shop-receipt-link" to={`/receipts/${receiptIdForTransaction('store', sale.transactionId ?? sale.id)}`}><ReceiptText /> View</Link>
         </div>;
       })}
       {!clothingSales.length ? <Empty title="No store sales yet" body="Recorded sales will preserve both the original list price and the final negotiated price." /> : null}
