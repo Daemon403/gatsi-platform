@@ -1,7 +1,7 @@
 import { Feather } from '@expo/vector-icons';
 import { buildLiveOperationsSummary, getActiveUser, money, transactionSummary, type DailyOperationsSummary, type OperationsMetrics } from '@gatsi/domain';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { AppHeader } from '../components/AppHeader';
 import { Screen } from '../components/Screen';
 import { Card, EmptyState, PrimaryButton, SectionTitle } from '../components/ui';
@@ -192,7 +192,11 @@ function AdminOperationsSummaries() {
 }
 
 function SummaryDetails({ summary, live, latest }: { summary: DailyOperationsSummary; live: boolean; latest: boolean }) {
+  const { width: screenWidth } = useWindowDimensions();
   const transactions = transactionSummary(summary.totals);
+  const columns = screenWidth >= 700 ? 4 : 2;
+  const gap = 9;
+  const cardWidth = Math.floor((Math.max(0, screenWidth - 36) - gap * (columns - 1)) / columns);
   return <>
     <Card style={[styles.summaryHeadingCard, live && styles.summaryHeadingLive]}>
       <View style={styles.summaryCalendar}><Feather name={live ? 'radio' : 'calendar'} size={21} color="#fff" /></View>
@@ -204,15 +208,15 @@ function SummaryDetails({ summary, live, latest }: { summary: DailyOperationsSum
     </Card>
 
     <View style={styles.keySummaryGrid}>
-      <KeySummary label="Orders today" value={summary.totals.ordersCreated.toLocaleString()} />
-      <KeySummary label="Active orders" value={summary.totals.activeOrders.toLocaleString()} />
-      <KeySummary label="Transactions" value={transactions.count.toLocaleString()} />
-      <KeySummary label="Transaction revenue" value={money(transactions.revenue)} />
+      <KeySummary width={cardWidth} label="Orders today" value={summary.totals.ordersCreated.toLocaleString()} />
+      <KeySummary width={cardWidth} label="Active orders" value={summary.totals.activeOrders.toLocaleString()} />
+      <KeySummary width={cardWidth} label="Transactions" value={transactions.count.toLocaleString()} />
+      <KeySummary width={cardWidth} label="Transaction revenue" value={money(transactions.revenue)} />
     </View>
 
     <SectionTitle title="Company totals" />
     <View style={styles.metricGrid}>
-      {metrics.map((metric) => <Metric key={metric.key} metricsValue={summary.totals} metric={metric} />)}
+      {metrics.map((metric) => <Metric key={metric.key} width={cardWidth} metricsValue={summary.totals} metric={metric} />)}
     </View>
 
     <SectionTitle title={`Branch breakdown (${summary.branches.length})`} />
@@ -240,15 +244,15 @@ function SummaryDetails({ summary, live, latest }: { summary: DailyOperationsSum
   </>;
 }
 
-function KeySummary({ label, value }: { label: string; value: string }) {
-  return <View style={styles.keySummary}><Text style={styles.keySummaryLabel}>{label}</Text><Text style={styles.keySummaryValue}>{value}</Text></View>;
+function KeySummary({ label, value, width }: { label: string; value: string; width: number }) {
+  return <View style={[styles.keySummary, { width }]}><Text style={styles.keySummaryLabel}>{label}</Text><Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.62} style={styles.keySummaryValue}>{value}</Text></View>;
 }
 
-function Metric({ metricsValue, metric }: { metricsValue: OperationsMetrics; metric: typeof metrics[number] }) {
+function Metric({ metricsValue, metric, width }: { metricsValue: OperationsMetrics; metric: typeof metrics[number]; width: number }) {
   const palette = palettes[metric.tone ?? 'green'];
-  return <Card style={styles.metricCard}>
+  return <Card style={[styles.metricCard, { width }]}>
     <View style={[styles.metricIcon, { backgroundColor: palette.background }]}><Feather name={metric.icon} size={17} color={palette.foreground} /></View>
-    <Text style={[styles.metricValue, { color: palette.foreground }]}>{formatMetric(metricsValue, metric)}</Text>
+    <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.62} style={[styles.metricValue, { color: palette.foreground }]}>{formatMetric(metricsValue, metric)}</Text>
     <Text style={styles.metricLabel}>{metric.label}</Text>
   </Card>;
 }
@@ -309,11 +313,11 @@ const styles = StyleSheet.create({
   summaryDate: { color: '#fff', fontSize: 15, fontWeight: '900', marginTop: 3 },
   generatedAt: { color: 'rgba(255,255,255,0.72)', fontSize: 9, marginTop: 4 },
   keySummaryGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 9, marginVertical: 12 },
-  keySummary: { width: '48.5%', minHeight: 82, padding: 12, borderRadius: radius.sm, backgroundColor: colors.primaryLight, justifyContent: 'space-between' },
+  keySummary: { minHeight: 82, padding: 12, borderRadius: radius.sm, backgroundColor: colors.primaryLight, justifyContent: 'space-between' },
   keySummaryLabel: { color: colors.primary, fontSize: 9, fontWeight: '800' },
   keySummaryValue: { color: colors.ink, fontSize: 18, fontWeight: '900', marginTop: 8 },
   metricGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 9, marginBottom: 6 },
-  metricCard: { width: '48.5%', padding: 12, minHeight: 116 },
+  metricCard: { padding: 12, minHeight: 116 },
   metricIcon: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   metricValue: { fontSize: 16, fontWeight: '900', marginTop: 10 },
   metricLabel: { color: colors.muted, fontSize: 9, lineHeight: 13, marginTop: 3 },

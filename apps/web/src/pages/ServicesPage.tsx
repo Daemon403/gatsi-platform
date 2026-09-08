@@ -1,5 +1,5 @@
 import { getActiveUser, makeId, money, type AppAction, type Service } from '@gatsi/domain';
-import { ArrowRight, CheckCircle2, CircleOff, Clock3, Droplets, Pencil, Plus, RotateCcw, Scissors, Shirt, Sparkles, Trash2, Truck } from 'lucide-react';
+import { ArrowRight, CheckCircle2, CircleOff, Clock3, Droplets, Pencil, Plus, RotateCcw, Scissors, Search, Shirt, Sparkles, Trash2, Truck, X } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button, Card, Empty, FormField, PageTitle } from '../components/ui';
@@ -48,8 +48,11 @@ export function ServicesPage() {
   const [formError, setFormError] = useState('');
   const [busyServiceId, setBusyServiceId] = useState<string | null>(null);
   const [actionError, setActionError] = useState('');
+  const [query, setQuery] = useState('');
   const isCreating = draft !== null && editingServiceId === null;
-  const services = isAdmin ? state.services : state.services.filter((service) => service.active);
+  const availableServices = isAdmin ? state.services : state.services.filter((service) => service.active);
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const services = availableServices.filter((service) => !normalizedQuery || [service.name, service.description, service.category.replaceAll('_', ' '), service.unit, money(service.price), `${service.turnaroundHours} hours`].join(' ').toLocaleLowerCase().includes(normalizedQuery));
 
   const beginCreate = () => {
     if (!isAdmin) return;
@@ -155,6 +158,12 @@ export function ServicesPage() {
     />
     <section className="service-banner"><div><span>Professional textile care</span><h2>Cleaned with precision.<br />Finished with care.</h2><p>Every order is tagged, assigned and visible from intake to collection.</p></div><span className="service-banner-icon"><Shirt /></span></section>
 
+    <div className="catalog-search">
+      <Search />
+      <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search services by name, category, unit or description" aria-label="Search services" />
+      {query ? <button type="button" onClick={() => setQuery('')} aria-label="Clear service search"><X /></button> : <small>{services.length} shown</small>}
+    </div>
+
     {isAdmin && draft ? <Card className="inline-form admin-edit-form">
       <div className="card-heading"><div><span className="eyebrow">Catalogue settings</span><h2>{isCreating ? 'Add a service' : `Edit ${draft.name}`}</h2></div></div>
       <form className="form-grid two" onSubmit={(event) => void saveService(event)} aria-busy={saving}>
@@ -172,7 +181,7 @@ export function ServicesPage() {
 
     {actionError ? <div className="management-error" role="alert">{actionError}</div> : null}
 
-    {!services.length && !draft ? <Card><Empty title="No services yet" body={isAdmin ? 'Add the first service to build the catalogue used for order intake.' : 'No active services are currently available.'} /></Card> : null}
+    {!services.length && !draft ? <Card><Empty title={normalizedQuery ? 'No matching services' : 'No services yet'} body={normalizedQuery ? `No service matches “${query.trim()}”. Try a different name, category or description.` : isAdmin ? 'Add the first service to build the catalogue used for order intake.' : 'No active services are currently available.'} /></Card> : null}
 
     <div className="services-grid">{services.map((service) => <Card className={`service-tile ${service.active ? '' : 'record-inactive'}`} key={service.id}>
       <span>{icons[service.category]}</span><small>{service.category.replaceAll('_', ' ')}</small><h3>{service.name}</h3><p>{service.description}</p>

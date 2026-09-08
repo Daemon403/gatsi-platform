@@ -64,7 +64,7 @@ export function StatusPill({ status }: { status: OrderStatus }) {
   return <View style={[styles.pill, { backgroundColor: tone.bg }]}><Text style={[styles.pillText, { color: tone.fg }]}>{statusLabels[status]}</Text></View>;
 }
 
-export function MetricCard({ label, value, icon, tone = 'green', detail }: { label: string; value: string | number; icon: keyof typeof Feather.glyphMap; tone?: 'green' | 'blue' | 'amber' | 'red'; detail?: string }) {
+export function MetricCard({ label, value, icon, tone = 'green', detail, style }: { label: string; value: string | number; icon: keyof typeof Feather.glyphMap; tone?: 'green' | 'blue' | 'amber' | 'red'; detail?: string; style?: StyleProp<ViewStyle> }) {
   const palette = {
     green: [colors.primary, colors.primaryLight],
     blue: [colors.blue, colors.blueSoft],
@@ -72,9 +72,9 @@ export function MetricCard({ label, value, icon, tone = 'green', detail }: { lab
     red: [colors.red, colors.redSoft],
   }[tone];
   return (
-    <Card style={styles.metricCard}>
+    <Card style={[styles.metricCard, style]}>
       <View style={[styles.metricIcon, { backgroundColor: palette[1] }]}><Feather name={icon} size={19} color={palette[0]} /></View>
-      <Text style={[styles.metricValue, { color: palette[0] }]}>{value}</Text>
+      <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.58} style={[styles.metricValue, { color: palette[0] }]}>{value}</Text>
       <Text style={styles.metricLabel}>{label}</Text>
       {detail ? <Text style={styles.metricDetail}>{detail}</Text> : null}
     </Card>
@@ -140,7 +140,7 @@ export const styles = StyleSheet.create({
   inputTextMultiline: { minHeight: 100, paddingTop: 14 },
   pill: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
   pillText: { fontSize: 11, fontWeight: '800' },
-  metricCard: { width: '48.4%', padding: 14, minHeight: 152 },
+  metricCard: { padding: 14, minHeight: 152 },
   metricIcon: { width: 38, height: 38, borderRadius: 11, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
   metricValue: { fontSize: 27, fontWeight: '900', letterSpacing: -0.8 },
   metricLabel: { color: colors.ink, fontSize: 13, fontWeight: '700', marginTop: 4 },

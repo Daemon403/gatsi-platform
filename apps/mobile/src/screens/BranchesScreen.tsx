@@ -291,7 +291,7 @@ function BranchEditor({ branch, onClose }: { branch: Branch; onClose: () => void
 }
 
 function Stat({ value, label }: { value: string | number; label: string }) {
-  return <View><Text style={styles.branchValue}>{value}</Text><Text style={styles.branchLabel}>{label}</Text></View>;
+  return <View style={styles.branchStat}><Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.65} style={styles.branchValue}>{value}</Text><Text style={styles.branchLabel}>{label}</Text></View>;
 }
 
 function ErrorNotice({ message }: { message: string }) {
@@ -316,6 +316,7 @@ const styles = StyleSheet.create({
   openText: { color: colors.primary, fontSize: 9, fontWeight: '900' },
   closedText: { color: colors.red },
   branchStats: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 13, marginTop: 13 },
+  branchStat: { flex: 1, minWidth: 0 },
   branchValue: { color: colors.ink, fontSize: 14, fontWeight: '900' },
   branchLabel: { color: colors.subtle, textTransform: 'uppercase', fontSize: 8, marginTop: 3 },
   availabilityButton: { minHeight: 42, marginTop: 13, borderRadius: radius.sm, borderWidth: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },

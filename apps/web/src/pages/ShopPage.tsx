@@ -20,6 +20,7 @@ import {
   Plus,
   RotateCcw,
   Save,
+  Search,
   ReceiptText,
   Shirt,
   ShoppingCart,
@@ -72,13 +73,13 @@ export function ShopPage() {
   const defaultBranchId = state.activeBranchId !== 'all' && activeBranches.some((branch) => branch.id === state.activeBranchId)
     ? state.activeBranchId
     : activeBranches[0]?.id ?? '';
-  const clothing = state.clothingItems.filter((item) => {
+  const branchClothing = state.clothingItems.filter((item) => {
     const inSelectedBranch = state.activeBranchId === 'all' || item.branchId === state.activeBranchId;
     return inSelectedBranch && (isAdmin || item.active);
   });
   const clothingSales = state.clothingSales.filter((sale) => state.activeBranchId === 'all' || sale.branchId === state.activeBranchId);
-  const lowClothing = clothing.filter((item) => item.active && item.quantity <= item.reorderLevel);
-  const retailValue = clothing.filter((item) => item.active).reduce((sum, item) => sum + item.quantity * item.price, 0);
+  const lowClothing = branchClothing.filter((item) => item.active && item.quantity <= item.reorderLevel);
+  const retailValue = branchClothing.filter((item) => item.active).reduce((sum, item) => sum + item.quantity * item.price, 0);
   const salesRevenue = clothingSales.reduce((sum, sale) => sum + sale.total, 0);
   const transactionCount = new Set(clothingSales.map((sale) => sale.transactionId ?? sale.id)).size;
 
@@ -94,6 +95,13 @@ export function ShopPage() {
   const [busyKey, setBusyKey] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [query, setQuery] = useState('');
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const clothing = branchClothing.filter((item) => {
+    if (!normalizedQuery) return true;
+    const branch = state.branches.find((entry) => entry.id === item.branchId);
+    return [item.name, item.sku, item.category, item.size, item.color, branch?.name, branch?.shortName, item.active ? 'active' : 'archived'].filter(Boolean).join(' ').toLocaleLowerCase().includes(normalizedQuery);
+  });
 
   const runAction = async (action: AppAction, key: string, successMessage: string) => {
     if (busyKey) return null;
@@ -282,7 +290,7 @@ export function ShopPage() {
     />
 
     <div className="metric-grid">
-      <Metric icon={<Store />} value={clothing.filter((item) => item.active).length} label="Active products" detail={`${clothing.filter((item) => !item.active).length} archived`} />
+      <Metric icon={<Store />} value={branchClothing.filter((item) => item.active).length} label="Active products" detail={`${branchClothing.filter((item) => !item.active).length} archived`} />
       <Metric icon={<AlertTriangle />} tone={lowClothing.length ? 'red' : 'green'} value={lowClothing.length} label="Reorder alerts" detail="At or below threshold" />
       <Metric icon={<PackagePlus />} tone="blue" value={money(retailValue)} label="Stock at list value" detail="Active products" />
       <Metric icon={<DollarSign />} tone="purple" value={money(salesRevenue)} label="Final sales revenue" detail={`${clothingSales.reduce((sum, sale) => sum + sale.quantity, 0)} units sold`} />
@@ -310,7 +318,12 @@ export function ShopPage() {
       </>}
     </Card>
 
-    <div className="section-heading retail-section-heading"><div><span className="eyebrow">Store catalogue</span><h2>Clothing items</h2></div><small>{clothing.filter((item) => item.active).length} active · {clothing.filter((item) => !item.active).length} archived</small></div>
+    <div className="section-heading retail-section-heading"><div><span className="eyebrow">Store catalogue</span><h2>Clothing items</h2></div><small>{clothing.length} of {branchClothing.length} shown</small></div>
+    <div className="catalog-search shop-catalog-search">
+      <Search />
+      <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by product, SKU, category, size or colour" aria-label="Search store products" />
+      {query ? <button type="button" onClick={() => setQuery('')} aria-label="Clear product search"><X /></button> : <small>{clothing.length} shown</small>}
+    </div>
     <div className="retail-grid">
       {clothing.map((item) => {
         const branch = state.branches.find((entry) => entry.id === item.branchId);
@@ -340,7 +353,7 @@ export function ShopPage() {
           </div> : null}
         </Card>;
       })}
-      {!clothing.length ? <Card className="retail-empty"><Empty title="No store products found" body={isAdmin ? 'Add the first clothing item for the selected branch.' : 'There are no active store products at this branch.'} /></Card> : null}
+      {!clothing.length ? <Card className="retail-empty"><Empty title={normalizedQuery ? 'No matching products' : 'No store products found'} body={normalizedQuery ? `No product matches “${query.trim()}”. Try a different name, SKU, category, size or colour.` : isAdmin ? 'Add the first clothing item for the selected branch.' : 'There are no active store products at this branch.'} /></Card> : null}
     </div>
 
     <div className="section-heading retail-section-heading shop-history-heading"><div><span className="eyebrow">Sales history</span><h2>List price vs final sold price</h2></div><small>{transactionCount} recorded {transactionCount === 1 ? 'transaction' : 'transactions'}</small></div>

@@ -19,6 +19,9 @@ export function ServicesManagementScreen() {
   const [creating, setCreating] = useState(false);
   const [busyServiceId, setBusyServiceId] = useState<string | null>(null);
   const [serviceErrors, setServiceErrors] = useState<Record<string, string>>({});
+  const [query, setQuery] = useState('');
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const services = state.services.filter((service) => !normalizedQuery || [service.name, service.description, service.category.replaceAll('_', ' '), service.unit, money(service.price), `${service.turnaroundHours} hours`].join(' ').toLocaleLowerCase().includes(normalizedQuery));
 
   if (currentUser?.role !== 'admin') {
     return <Screen>
@@ -75,9 +78,11 @@ export function ServicesManagementScreen() {
 
   return <Screen>
     <AppHeader title="Services" subtitle="Pricing, turnaround and catalogue availability" back />
+    <Input label="Search services" icon="search" value={query} onChangeText={setQuery} placeholder="Name, category, unit or description" autoCapitalize="none" autoCorrect={false} />
+    <Text style={styles.resultCount}>{services.length} of {state.services.length} service{state.services.length === 1 ? '' : 's'} shown</Text>
     <SectionTitle title="Service catalogue" action={creating ? 'Close' : 'Add service'} onPress={() => setCreating((value) => !value)} />
     {creating ? <Card style={styles.createCard}><ServiceCreator onClose={() => setCreating(false)} /></Card> : null}
-    {state.services.map((service) => <Card key={service.id} style={styles.serviceCard}>
+    {services.map((service) => <Card key={service.id} style={styles.serviceCard}>
       <View style={styles.serviceTop}>
         <View style={styles.serviceIcon}><Feather name={service.category === 'speciality' ? 'star' : 'package'} size={20} color={colors.primary} /></View>
         <View style={styles.flex}>
@@ -113,7 +118,7 @@ export function ServicesManagementScreen() {
       {serviceErrors[service.id] ? <ErrorNotice message={serviceErrors[service.id]} /> : null}
       {editingServiceId === service.id ? <ServiceEditor service={service} onClose={() => setEditingServiceId(null)} /> : null}
     </Card>)}
-    {!state.services.length ? <Card><EmptyState icon="package" title="No services" body="No service records are available yet." /></Card> : null}
+    {!services.length ? <Card><EmptyState icon={normalizedQuery ? 'search' : 'package'} title={normalizedQuery ? 'No matching services' : 'No services'} body={normalizedQuery ? `No service matches “${query.trim()}”. Try another name, category or description.` : 'No service records are available yet.'} /></Card> : null}
   </Screen>;
 }
 
@@ -296,6 +301,7 @@ function Choice({ label, selected, disabled, onPress }: { label: string; selecte
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
+  resultCount: { color: colors.muted, fontSize: 10, marginTop: 8, marginBottom: 2, textAlign: 'right' },
   createCard: { padding: 15, marginBottom: 14 },
   creator: { gap: 13 },
   serviceCard: { padding: 15, marginBottom: 11 },

@@ -3,7 +3,7 @@ import { branchRevenue, getActiveUser, money, orderBalance, visibleOrders } from
 import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { AppHeader } from '../components/AppHeader';
 import { Screen } from '../components/Screen';
 import { Card, MetricCard, OrderCard, QuickAction, SectionTitle } from '../components/ui';
@@ -11,6 +11,7 @@ import { useAppStore } from '../store/AppStore';
 import { colors, radius, shadow } from '../theme';
 
 export function HomeScreen() {
+  const { width: screenWidth } = useWindowDimensions();
   const { state, dispatch } = useAppStore();
   const navigation = useNavigation<any>();
   const user = getActiveUser(state)!;
@@ -22,6 +23,9 @@ export function HomeScreen() {
   const current = active[0];
   const setupIncomplete = user.role === 'admin' && (!state.branches.length || !state.services.length);
   const recentActivity = state.activities.filter((item) => state.activeBranchId === 'all' || item.branchId === state.activeBranchId).slice(0, 4);
+  const metricColumns = screenWidth >= 700 ? 4 : 2;
+  const metricGap = 11;
+  const metricCardWidth = Math.floor((Math.max(0, screenWidth - 36) - metricGap * (metricColumns - 1)) / metricColumns);
 
   const actions = user.role === 'admin' && setupIncomplete ? [
     { label: 'Branches', icon: 'map-pin' as const, action: () => navigation.navigate('Branches') },
@@ -75,15 +79,15 @@ export function HomeScreen() {
 
       <View style={styles.metrics}>
         {user.role === 'customer' ? <>
-          <MetricCard label="Active orders" value={active.length} icon="refresh-cw" />
-          <MetricCard label="Loyalty points" value={state.customers.find((item) => item.id === user.customerId)?.loyaltyPoints ?? 0} icon="award" tone="amber" />
-          <MetricCard label="Completed" value={completed.length} icon="check-circle" tone="blue" />
-          <MetricCard label="Balance due" value={money(outstanding)} icon="credit-card" tone={outstanding ? 'red' : 'green'} />
+          <MetricCard style={{ width: metricCardWidth }} label="Active orders" value={active.length} icon="refresh-cw" />
+          <MetricCard style={{ width: metricCardWidth }} label="Loyalty points" value={state.customers.find((item) => item.id === user.customerId)?.loyaltyPoints ?? 0} icon="award" tone="amber" />
+          <MetricCard style={{ width: metricCardWidth }} label="Completed" value={completed.length} icon="check-circle" tone="blue" />
+          <MetricCard style={{ width: metricCardWidth }} label="Balance due" value={money(outstanding)} icon="credit-card" tone={outstanding ? 'red' : 'green'} />
         </> : <>
-          <MetricCard label="Active orders" value={active.length} icon="shopping-bag" detail="In the care workflow" />
-          <MetricCard label="Ready today" value={orders.filter((item) => item.status === 'ready').length} icon="check-circle" tone="blue" detail="Awaiting collection" />
-          <MetricCard label="Outstanding" value={money(outstanding)} icon="credit-card" tone="amber" detail="Across visible orders" />
-          <MetricCard label="Low stock" value={state.inventory.filter((item) => (state.activeBranchId === 'all' || item.branchId === state.activeBranchId) && item.quantity <= item.reorderLevel).length} icon="alert-triangle" tone="red" detail="Needs replenishment" />
+          <MetricCard style={{ width: metricCardWidth }} label="Active orders" value={active.length} icon="shopping-bag" detail="In the care workflow" />
+          <MetricCard style={{ width: metricCardWidth }} label="Ready today" value={orders.filter((item) => item.status === 'ready').length} icon="check-circle" tone="blue" detail="Awaiting collection" />
+          <MetricCard style={{ width: metricCardWidth }} label="Outstanding" value={money(outstanding)} icon="credit-card" tone="amber" detail="Across visible orders" />
+          <MetricCard style={{ width: metricCardWidth }} label="Low stock" value={state.inventory.filter((item) => (state.activeBranchId === 'all' || item.branchId === state.activeBranchId) && item.quantity <= item.reorderLevel).length} icon="alert-triangle" tone="red" detail="Needs replenishment" />
         </>}
       </View>
 

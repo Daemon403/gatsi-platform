@@ -77,13 +77,20 @@ function ShopView() {
   const [adjustingItemId, setAdjustingItemId] = useState<string | null>(null);
   const [busyItemId, setBusyItemId] = useState<string | null>(null);
   const [cartLines, setCartLines] = useState<CartLine[]>([]);
+  const [query, setQuery] = useState('');
   const cartUnits = cartLines.reduce((total, line) => total + line.quantity, 0);
 
-  const clothingItems = (state.clothingItems ?? []).filter((item) => (
+  const branchClothingItems = (state.clothingItems ?? []).filter((item) => (
     (state.activeBranchId === 'all' || item.branchId === state.activeBranchId)
     && (user.role === 'admin' || item.active)
   ));
-  const activeClothingItems = clothingItems.filter((item) => item.active);
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const clothingItems = branchClothingItems.filter((item) => {
+    if (!normalizedQuery) return true;
+    const branch = state.branches.find((entry) => entry.id === item.branchId);
+    return [item.name, item.sku, item.category, item.size, item.color, branch?.name, branch?.shortName, item.active ? 'active' : 'archived'].filter(Boolean).join(' ').toLocaleLowerCase().includes(normalizedQuery);
+  });
+  const activeClothingItems = branchClothingItems.filter((item) => item.active);
   const lowClothingItems = activeClothingItems.filter((item) => item.quantity <= item.reorderLevel);
   const totalSaleableUnits = activeClothingItems.reduce((sum, item) => sum + item.quantity, 0);
   const recentSales = (state.clothingSales ?? [])
@@ -151,6 +158,8 @@ function ShopView() {
       </View>
     </View>
 
+    <Input label="Search products" icon="search" value={query} onChangeText={setQuery} placeholder="Product, SKU, category, size or colour" autoCapitalize="none" autoCorrect={false} />
+    <Text style={styles.resultCount}>{clothingItems.length} of {branchClothingItems.length} product{branchClothingItems.length === 1 ? '' : 's'} shown</Text>
     <SectionTitle
       title="1. Select products"
       action={user.role === 'admin' ? (creating ? 'Close' : 'Add item') : undefined}
@@ -218,7 +227,7 @@ function ShopView() {
         </TouchableOpacity> : null}
       </Card>;
     })}
-    {!clothingItems.length ? <Card><EmptyState icon="shopping-bag" title="No clothing items" body={user.role === 'admin' ? 'Add the first sellable clothing item to start tracking retail stock.' : 'There are no clothing items available for this branch.'} /></Card> : null}
+    {!clothingItems.length ? <Card><EmptyState icon={normalizedQuery ? 'search' : 'shopping-bag'} title={normalizedQuery ? 'No matching products' : 'No clothing items'} body={normalizedQuery ? `No product matches “${query.trim()}”. Try another name, SKU, category, size or colour.` : user.role === 'admin' ? 'Add the first sellable clothing item to start tracking retail stock.' : 'There are no clothing items available for this branch.'} /></Card> : null}
 
     <SectionTitle title={`2. Review customer cart · ${cartLines.length} product${cartLines.length === 1 ? '' : 's'}, ${cartUnits} unit${cartUnits === 1 ? '' : 's'}`} />
     <Card style={styles.cartCard}><CartCheckout lines={cartLines} onRemove={(itemId) => setCartLines((current) => current.filter((line) => line.itemId !== itemId))} onClear={() => setCartLines([])} /></Card>
@@ -519,6 +528,7 @@ const styles = StyleSheet.create({
   heroMeta: { color: colors.muted, fontSize: 10, marginTop: 5 },
   heroIcon: { width: 50, height: 50, borderRadius: 16, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center' },
   heroIconAlert: { backgroundColor: colors.amberSoft },
+  resultCount: { color: colors.muted, fontSize: 10, marginTop: 8, marginBottom: 2, textAlign: 'right' },
   formCard: { padding: 15, marginBottom: 14 },
   cartCard: { padding: 15, marginBottom: 12 },
   cartContent: { gap: 12 },
