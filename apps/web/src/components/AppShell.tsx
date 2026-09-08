@@ -24,7 +24,6 @@ const navigation = (role: Role): NavItem[] => role === 'admin' ? [
   { label: 'Inventory', path: '/inventory', icon: <Boxes /> },
   { label: 'Store', path: '/shop', icon: <Store /> },
   { label: 'Receipts', path: '/receipts', icon: <ReceiptText /> },
-  { label: 'Team', path: '/team', icon: <ClipboardCheck /> },
   { label: 'Services', path: '/services', icon: <Scissors /> },
 ] : [
   { label: 'Home', path: '/', icon: <Home /> },

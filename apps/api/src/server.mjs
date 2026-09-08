@@ -54,7 +54,7 @@ const publicUsers = (state) => ({...state,users:state.users.map(({password,passw
 const scoped = (state,user) => {
   state=normalizeState(state);
   const branchIds=user.role==='admin'?state.branches.map(b=>b.id):user.profile.branchIds||[];
-  const orders=user.role==='customer'?state.orders.filter(o=>o.customerId===user.profile.customerId):state.orders.filter(o=>branchIds.includes(o.branchId));
+  const orders=user.role==='customer'?state.orders.filter(o=>o.customerId===user.profile.customerId):user.role==='staff'?state.orders.filter(o=>o.assignedStaffId===user.id&&branchIds.includes(o.branchId)):state.orders.filter(o=>branchIds.includes(o.branchId));
   const ids=new Set(orders.map(o=>o.id));
   const users=state.users.filter((candidate)=>{
     if(user.role==='admin'||candidate.id===user.id)return true;
@@ -64,7 +64,7 @@ const scoped = (state,user) => {
   const notifications=user.role==='admin'?state.notifications:state.notifications.filter(item=>notificationRelatesToUser(state,item,user)).map(item=>({...item,recipientUserIds:(item.recipientUserIds||[]).includes(user.id)?[user.id]:[],readByUserIds:(item.readByUserIds||[]).includes(user.id)?[user.id]:[]}));
   const receipts=user.role==='customer'?state.receipts.filter(item=>item.customerId===user.profile.customerId):state.receipts.filter(item=>branchIds.includes(item.branchId));
   const visibleBranchIds=user.role==='customer'?new Set([...branchIds,...orders.map(order=>order.branchId),...state.pickupRequests.filter(item=>item.customerId===user.profile.customerId).map(item=>item.branchId)]):new Set(branchIds);
-  return publicUsers({...state,activeUserId:user.id,activeBranchId:user.role==='admin'?'all':branchIds[0],branches:state.branches.filter(b=>visibleBranchIds.has(b.id)),users,customers:user.role==='customer'?state.customers.filter(c=>c.id===user.profile.customerId):state.customers.filter(c=>branchIds.includes(c.branchId)),orders,payments:state.payments.filter(p=>ids.has(p.orderId)),pickupRequests:user.role==='customer'?state.pickupRequests.filter(p=>p.customerId===user.profile.customerId):state.pickupRequests.filter(p=>branchIds.includes(p.branchId)),inventory:user.role==='customer'?[]:state.inventory.filter(i=>branchIds.includes(i.branchId)),clothingItems:user.role==='customer'?[]:state.clothingItems.filter(i=>branchIds.includes(i.branchId)),clothingSales:user.role==='customer'?[]:state.clothingSales.filter(s=>branchIds.includes(s.branchId)),receipts,activities:user.role==='customer'?[]:state.activities.filter(a=>branchIds.includes(a.branchId)),notifications});
+  return publicUsers({...state,activeUserId:user.id,activeBranchId:user.role==='admin'?'all':branchIds[0],branches:state.branches.filter(b=>visibleBranchIds.has(b.id)),users,customers:user.role==='customer'?state.customers.filter(c=>c.id===user.profile.customerId):state.customers.filter(c=>branchIds.includes(c.branchId)),orders,payments:state.payments.filter(p=>ids.has(p.orderId)),pickupRequests:user.role==='customer'?state.pickupRequests.filter(p=>p.customerId===user.profile.customerId):state.pickupRequests.filter(p=>branchIds.includes(p.branchId)),inventory:user.role==='customer'?[]:state.inventory.filter(i=>branchIds.includes(i.branchId)),clothingItems:user.role==='customer'?[]:state.clothingItems.filter(i=>branchIds.includes(i.branchId)),clothingSales:user.role==='customer'?[]:state.clothingSales.filter(s=>branchIds.includes(s.branchId)),receipts,activities:user.role==='admin'?state.activities:[],notifications});
 };
 const canBranch=(user,id)=>user.role==='admin'||(user.profile.branchIds||[]).includes(id);
 const activity=(branchId,userId,message,kind)=>({id:`activity-${randomUUID()}`,branchId,userId,message,kind,at:new Date().toISOString()});
@@ -578,9 +578,11 @@ async function mutate(user,action,req){
     if(!target||target.active===false||(user.role!=='admin'&&user.id!==target.id))throw fail('Not authorized.',403);
     if(action.clockedIn!==undefined&&typeof action.clockedIn!=='boolean')throw fail('Clock state must be true or false.');
     const previousClockedIn=Boolean(target.clockedIn),clockedIn=typeof action.clockedIn==='boolean'?action.clockedIn:!previousClockedIn;
+    const occurredAt=new Date(clientOccurrenceTime(action.occurredAt)).toISOString();
     target.clockedIn=clockedIn;
-    if(clockedIn&&!previousClockedIn)target.lastClockIn=new Date().toISOString();
-    auditMetadata={clockedIn};auditEntityType='user';auditEntityId=target.id;
+    if(clockedIn&&!previousClockedIn)target.lastClockIn=occurredAt;
+    if(previousClockedIn!==clockedIn)state.activities.unshift({...activity(target.branchIds?.[0]||state.activeBranchId,target.id,`clocked ${clockedIn?'in':'out'}`,'staff'),at:occurredAt});
+    auditMetadata={clockedIn,occurredAt};auditEntityType='user';auditEntityId=target.id;
   }
   else if(action.type==='MARK_ALL_NOTIFICATIONS_READ'){
     let marked=0;

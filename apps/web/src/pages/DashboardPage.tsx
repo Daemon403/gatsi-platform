@@ -15,6 +15,12 @@ export function DashboardPage() {
   const revenue = branchRevenue(state, user.role === 'customer' ? 'all' : state.activeBranchId);
   const setupIncomplete = user.role === 'admin' && (!state.branches.length || !state.services.length);
   const activity = state.activities.filter((item) => state.activeBranchId === 'all' || item.branchId === state.activeBranchId).slice(0, 4);
+  const toggleClock = () => dispatch({
+    type: 'CLOCK_TOGGLE',
+    userId: user.id,
+    clockedIn: !Boolean(user.clockedIn),
+    occurredAt: new Date().toISOString(),
+  });
 
   if (user.role === 'customer') return <CustomerDashboard />;
 
@@ -22,7 +28,7 @@ export function DashboardPage() {
     <PageTitle
       eyebrow={user.role === 'admin' ? 'Command centre' : 'Branch workspace'}
       title={user.role === 'admin' ? 'Business overview' : 'Good morning, ' + user.name.split(' ')[0]}
-      description={user.role === 'admin' ? 'Live operational health from the shared database.' : active.length + ' active orders are moving through your care workflow.'}
+      description={user.role === 'admin' ? 'Live operational health from the shared database.' : 'Clock in, intake jobs and open Orders to work on tasks assigned to you.'}
       actions={setupIncomplete
         ? <Link to={!state.branches.length ? '/branches' : '/services'}><Button><Plus /> Continue setup</Button></Link>
         : <Link to="/orders/new"><Button><Plus /> New order</Button></Link>}
@@ -44,9 +50,10 @@ export function DashboardPage() {
 
     {user.role === 'admin'
       ? <Card className="balance-hero"><div><span>Revenue collected</span><strong>{money(revenue)}</strong><p><CheckCircle2 /> Calculated from database payments</p></div><div className="balance-symbol"><DollarSign /></div><div className="hero-actions"><Link to="/orders">View transactions <ArrowRight /></Link><Link to="/branches">Branch performance <ArrowRight /></Link></div></Card>
-      : <Card className="shift-hero"><div className="shift-state"><span className={user.clockedIn ? 'shift-live' : 'shift-off'}><Clock3 /> {user.clockedIn ? 'Shift active' : 'Not clocked in'}</span><h2>{user.clockedIn ? 'Ready for today’s care queue' : 'Start your workspace'}</h2><p>{user.clockedIn ? 'You have ' + active.length + ' active orders and ' + ready.length + ' ready for collection.' : 'Clock in to start processing branch orders.'}</p></div><Button variant={user.clockedIn ? 'secondary' : 'primary'} onClick={() => dispatch({ type: 'CLOCK_TOGGLE', userId: user.id, clockedIn: !Boolean(user.clockedIn) })}>{user.clockedIn ? 'Clock out' : 'Clock in'}</Button></Card>}
+      : <Card className="shift-hero"><div className="shift-state"><span className={user.clockedIn ? 'shift-live' : 'shift-off'}><Clock3 /> {user.clockedIn ? 'Shift active' : 'Not clocked in'}</span><h2>{user.clockedIn ? 'Ready for your assigned care queue' : 'Start your workspace'}</h2><p>{user.clockedIn ? 'You have ' + active.length + ' assigned active orders and ' + ready.length + ' ready for collection.' : 'Clock in online or offline to start processing your assigned orders.'}</p></div><Button variant={user.clockedIn ? 'secondary' : 'primary'} onClick={toggleClock}>{user.clockedIn ? 'Clock out' : 'Clock in'}</Button></Card>}
 
-    <div className="metric-grid"><Metric icon={<Package2 />} tone="green" value={active.length} label="Active orders" detail="In the care workflow" /><Metric icon={<CheckCircle2 />} tone="blue" value={ready.length} label="Ready for collection" detail="Customer notification due" /><Metric icon={<CreditCard />} tone="amber" value={money(outstanding)} label="Outstanding" detail="Across visible orders" /><Metric icon={<AlertTriangle />} tone="red" value={lowStock.length} label="Low stock" detail="At or below reorder level" /></div>
+    {user.role === 'admin' ? <>
+      <div className="metric-grid"><Metric icon={<Package2 />} tone="green" value={active.length} label="Active orders" detail="In the care workflow" /><Metric icon={<CheckCircle2 />} tone="blue" value={ready.length} label="Ready for collection" detail="Customer notification due" /><Metric icon={<CreditCard />} tone="amber" value={money(outstanding)} label="Outstanding" detail="Across visible orders" /><Metric icon={<AlertTriangle />} tone="red" value={lowStock.length} label="Low stock" detail="At or below reorder level" /></div>
 
     <div className="dashboard-columns">
       <section><div className="section-heading"><div><span className="eyebrow">Live queue</span><h2>Today’s workflow</h2></div><Link to="/orders">View all <ArrowRight /></Link></div><Card className="order-list">{orders.slice(0, 5).map((order) => <OrderRow key={order.id} state={state} order={order} />)}{!orders.length ? <Empty title="No orders yet" body="Orders created by an administrator or staff member will appear here." /> : null}</Card></section>
@@ -56,7 +63,8 @@ export function DashboardPage() {
         <div className="section-heading compact"><div><span className="eyebrow">Recent</span><h2>Team activity</h2></div></div>
         <Card className="activity-list">{activity.map((item) => { const actor = state.users.find((member) => member.id === item.userId); return <div className="activity-row" key={item.id}><span style={{ background: actor?.avatarColor }}>{actor?.name.split(' ').map((part) => part[0]).join('').slice(0, 2)}</span><p><strong>{actor?.name}</strong> {item.message}<small>{new Date(item.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small></p></div>; })}{!activity.length ? <Empty title="No activity yet" body="Database-backed changes will be listed here as work begins." /> : null}</Card>
       </section>
-    </div>
+      </div>
+    </> : null}
   </>;
 }
 

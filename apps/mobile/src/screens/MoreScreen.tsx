@@ -17,7 +17,7 @@ export function MoreScreen() {
   const { state, dispatch, sync } = useAppStore();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const currentUser = getActiveUser(state)!;
-  const canViewTeam = currentUser.role === 'admin' || currentUser.role === 'staff';
+  const canViewTeam = currentUser.role === 'admin';
   const canViewBranches = currentUser.role === 'admin';
 
   const logout = () => {
@@ -62,15 +62,15 @@ export function MoreScreen() {
       </Card>
     </> : null}
 
-    {canViewTeam ? <>
+    {currentUser.role !== 'customer' ? <>
       <SectionTitle title="Management" />
       <Card style={styles.menu}>
-        <MenuItem
+        {canViewTeam ? <MenuItem
           icon="users"
           title="Team"
-          detail={currentUser.role === 'admin' ? 'Add, assign, archive and restore staff accounts' : 'View teammates assigned to your branches'}
+          detail="Add, assign, archive and restore staff accounts"
           onPress={() => navigation.navigate('Team')}
-        />
+        /> : null}
         <MenuItem
           icon="shopping-bag"
           title="Store"

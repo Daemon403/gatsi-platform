@@ -301,10 +301,11 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
       if (!user || (action.clockedIn !== undefined && typeof action.clockedIn !== 'boolean')) return state;
       const clockedIn = typeof action.clockedIn === 'boolean' ? action.clockedIn : !Boolean(user.clockedIn);
       if (Boolean(user.clockedIn) === clockedIn) return state;
+      const occurredAt = action.occurredAt && Number.isFinite(Date.parse(action.occurredAt)) ? new Date(action.occurredAt).toISOString() : new Date().toISOString();
       return {
         ...state,
-        users: state.users.map((item) => item.id === action.userId ? { ...item, clockedIn, lastClockIn: clockedIn ? new Date().toISOString() : item.lastClockIn } : item),
-        activities: [activity(state, { branchId: user.branchIds[0] ?? state.activeBranchId, userId: user.id, message: `clocked ${clockedIn ? 'in' : 'out'}`, kind: 'staff' }), ...state.activities],
+        users: state.users.map((item) => item.id === action.userId ? { ...item, clockedIn, lastClockIn: clockedIn ? occurredAt : item.lastClockIn } : item),
+        activities: [{ ...activity(state, { branchId: user.branchIds[0] ?? state.activeBranchId, userId: user.id, message: `clocked ${clockedIn ? 'in' : 'out'}`, kind: 'staff' }), at: occurredAt }, ...state.activities],
       };
     }
     case 'CREATE_CUSTOMER': {

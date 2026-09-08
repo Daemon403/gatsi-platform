@@ -79,7 +79,7 @@ export function AppNavigation() {
         <Root.Screen name="Profile" component={ProfileScreen} />
         {role === 'admin' ? <Root.Screen name="SynchronizationSettings" component={SynchronizationSettingsScreen} /> : null}
         {role !== 'customer' ? <Root.Screen name="Shop" component={ShopScreen} /> : null}
-        {role !== 'customer' ? <Root.Screen name="Team" component={TeamScreen} /> : null}
+        {role === 'admin' ? <Root.Screen name="Team" component={TeamScreen} /> : null}
         {role === 'admin' ? <Root.Screen name="Branches" component={BranchesScreen} /> : null}
         {role === 'admin' ? <Root.Screen name="ServicesManagement" component={ServicesManagementScreen} /> : null}
         {role === 'admin' ? <Root.Screen name="OperationsSummaries" component={OperationsSummariesScreen} /> : null}

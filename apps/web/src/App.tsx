@@ -31,7 +31,7 @@ export function App() {
     <Route path="/customers" element={user.role === 'admin' ? <CustomersPage /> : <Navigate to="/" />} />
     <Route path="/inventory" element={user.role === 'customer' ? <Navigate to="/" /> : <InventoryPage />} />
     <Route path="/shop" element={user.role === 'customer' ? <Navigate to="/" /> : <ShopPage />} />
-    <Route path="/team" element={user.role === 'customer' ? <Navigate to="/" /> : <TeamPage />} />
+    <Route path="/team" element={user.role === 'admin' ? <TeamPage /> : <Navigate to="/" />} />
     <Route path="/branches" element={user.role === 'admin' ? <BranchesPage /> : <Navigate to="/" />} />
     <Route path="/services" element={<ServicesPage />} />
     <Route path="/operations-summary" element={user.role === 'admin' ? <OperationsSummaryPage /> : <Navigate to="/" />} />

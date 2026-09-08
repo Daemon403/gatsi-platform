@@ -28,7 +28,7 @@ export function OrdersScreen() {
 
   return (
     <Screen>
-      <AppHeader title={user.role === 'customer' ? 'Track orders' : 'Orders'} subtitle={user.role === 'customer' ? 'Follow every stage of garment care' : 'Track and manage branch orders'} />
+      <AppHeader title={user.role === 'customer' ? 'Track orders' : user.role === 'staff' ? 'My assigned orders' : 'Orders'} subtitle={user.role === 'customer' ? 'Follow every stage of garment care' : user.role === 'staff' ? 'Jobs assigned to your profile' : 'Track and manage branch orders'} />
       <View style={styles.searchRow}>
         <View style={styles.search}><Feather name="search" size={18} color={colors.muted} /><TextInput value={query} onChangeText={setQuery} style={styles.searchInput} placeholder="Search order or customer..." placeholderTextColor={colors.subtle} /></View>
         {user.role !== 'customer' ? <TouchableOpacity onPress={() => navigation.navigate('CreateOrder')} style={styles.add}><Feather name="plus" size={23} color="#fff" /></TouchableOpacity> : null}

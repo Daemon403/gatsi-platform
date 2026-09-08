@@ -224,7 +224,7 @@ export const visibleOrders = (state: AppState) => {
   const user = getActiveUser(state);
   if (!user) return [];
   if (user.role === 'customer') return state.orders.filter((order) => order.customerId === user.customerId);
-  if (user.role === 'staff') return state.orders.filter((order) => user.branchIds.includes(order.branchId));
+  if (user.role === 'staff') return state.orders.filter((order) => order.assignedStaffId === user.id && user.branchIds.includes(order.branchId));
   return state.activeBranchId === 'all' ? state.orders : state.orders.filter((order) => order.branchId === state.activeBranchId);
 };
 

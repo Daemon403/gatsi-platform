@@ -264,6 +264,7 @@ const offlineActionTypes = new Set<AppAction['type']>([
   'CREATE_ORDER',
   'CREATE_CUSTOMER_AND_ORDER',
   'CREATE_CUSTOMER',
+  'CLOCK_TOGGLE',
   'UPDATE_ORDER_STATUS',
   'ADD_PAYMENT',
   'CREATE_PICKUP',

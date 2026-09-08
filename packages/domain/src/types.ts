@@ -345,7 +345,7 @@ export type AppAction =
   | { type: 'ADJUST_CLOTHING_STOCK'; itemId: string; delta: number; userId: string }
   | { type: 'RECORD_CLOTHING_SALE'; sale: ClothingSale }
   | { type: 'RECORD_STORE_PURCHASE'; purchase: StorePurchase }
-  | { type: 'CLOCK_TOGGLE'; userId: string; clockedIn?: boolean }
+  | { type: 'CLOCK_TOGGLE'; userId: string; clockedIn?: boolean; occurredAt?: string }
   | { type: 'CREATE_CUSTOMER'; customer: Customer; user: User }
   | { type: 'CREATE_BRANCH'; branch: Branch }
   | { type: 'CREATE_SERVICE'; service: Service }

@@ -26,6 +26,12 @@ export function HomeScreen() {
   const metricColumns = screenWidth >= 700 ? 4 : 2;
   const metricGap = 11;
   const metricCardWidth = Math.floor((Math.max(0, screenWidth - 36) - metricGap * (metricColumns - 1)) / metricColumns);
+  const toggleClock = () => dispatch({
+    type: 'CLOCK_TOGGLE',
+    userId: user.id,
+    clockedIn: !Boolean(user.clockedIn),
+    occurredAt: new Date().toISOString(),
+  });
 
   const actions = user.role === 'admin' && setupIncomplete ? [
     { label: 'Branches', icon: 'map-pin' as const, action: () => navigation.navigate('Branches') },
@@ -41,7 +47,7 @@ export function HomeScreen() {
     { label: 'New order', icon: 'plus-square' as const, action: () => navigation.navigate('CreateOrder') },
     { label: 'My tasks', icon: 'check-square' as const, action: () => navigation.navigate('Center') },
     { label: 'Stock use', icon: 'package' as const, action: () => navigation.navigate('Stock') },
-    { label: user.clockedIn ? 'Clock out' : 'Clock in', icon: 'clock' as const, action: () => dispatch({ type: 'CLOCK_TOGGLE', userId: user.id, clockedIn: !Boolean(user.clockedIn) }) },
+    { label: user.clockedIn ? 'Clock out' : 'Clock in', icon: 'clock' as const, action: toggleClock },
   ] : [
     { label: 'Book pickup', icon: 'truck' as const, action: () => navigation.navigate('PickupRequest') },
     { label: 'Track order', icon: 'map-pin' as const, action: () => navigation.navigate('Orders') },
@@ -63,8 +69,8 @@ export function HomeScreen() {
         </LinearGradient>
       ) : user.role === 'staff' ? (
         <LinearGradient colors={[colors.primary, '#16A865']} style={styles.hero}>
-          <View style={{ flex: 1 }}><Text style={styles.heroEyebrow}>Shift status</Text><Text style={styles.heroAmount}>{user.clockedIn ? 'Clocked in' : 'Not clocked in'}</Text><Text style={styles.heroDetail}>{user.clockedIn ? `${active.length} active orders need attention` : 'Clock in to start your workspace'}</Text></View>
-          <TouchableOpacity onPress={() => dispatch({ type: 'CLOCK_TOGGLE', userId: user.id, clockedIn: !Boolean(user.clockedIn) })} style={styles.shiftButton}><Feather name={user.clockedIn ? 'log-out' : 'log-in'} size={20} color={colors.primary} /></TouchableOpacity>
+          <View style={{ flex: 1 }}><Text style={styles.heroEyebrow}>Shift status</Text><Text style={styles.heroAmount}>{user.clockedIn ? 'Clocked in' : 'Not clocked in'}</Text><Text style={styles.heroDetail}>{user.clockedIn ? `${active.length} assigned orders need attention` : 'Clock in online or offline to start your workspace'}</Text></View>
+          <TouchableOpacity onPress={toggleClock} style={styles.shiftButton}><Feather name={user.clockedIn ? 'log-out' : 'log-in'} size={20} color={colors.primary} /></TouchableOpacity>
         </LinearGradient>
       ) : current ? (
         <TouchableOpacity activeOpacity={0.85} onPress={() => navigation.navigate('OrderDetail', { orderId: current.id })}>
@@ -77,7 +83,7 @@ export function HomeScreen() {
         <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.hero}><View><Text style={styles.heroEyebrow}>Welcome to Gatsi Comms</Text><Text style={styles.heroAmountSmall}>Your clothes, cared for.</Text><Text style={styles.heroDetail}>Book a pickup whenever you are ready.</Text></View></LinearGradient>
       )}
 
-      <View style={styles.metrics}>
+      {user.role !== 'staff' ? <View style={styles.metrics}>
         {user.role === 'customer' ? <>
           <MetricCard style={{ width: metricCardWidth }} label="Active orders" value={active.length} icon="refresh-cw" />
           <MetricCard style={{ width: metricCardWidth }} label="Loyalty points" value={state.customers.find((item) => item.id === user.customerId)?.loyaltyPoints ?? 0} icon="award" tone="amber" />
@@ -89,16 +95,18 @@ export function HomeScreen() {
           <MetricCard style={{ width: metricCardWidth }} label="Outstanding" value={money(outstanding)} icon="credit-card" tone="amber" detail="Across visible orders" />
           <MetricCard style={{ width: metricCardWidth }} label="Low stock" value={state.inventory.filter((item) => (state.activeBranchId === 'all' || item.branchId === state.activeBranchId) && item.quantity <= item.reorderLevel).length} icon="alert-triangle" tone="red" detail="Needs replenishment" />
         </>}
-      </View>
+      </View> : null}
 
       <SectionTitle title="Quick actions" />
       <View style={styles.actions}>{actions.map((action) => <QuickAction key={action.label} {...action} onPress={action.action} />)}</View>
 
-      <SectionTitle title={user.role === 'customer' ? 'Your recent orders' : 'Today’s workflow'} action="View all" onPress={() => navigation.navigate('Orders')} />
-      {orders.slice(0, 3).map((order) => <OrderCard key={order.id} state={state} order={order} onPress={() => navigation.navigate('OrderDetail', { orderId: order.id })} />)}
-      {!orders.length ? <View style={styles.noOrders}><Text style={styles.noOrdersText}>No orders here yet.</Text></View> : null}
+      {user.role !== 'staff' ? <>
+        <SectionTitle title={user.role === 'customer' ? 'Your recent orders' : 'Today’s workflow'} action="View all" onPress={() => navigation.navigate('Orders')} />
+        {orders.slice(0, 3).map((order) => <OrderCard key={order.id} state={state} order={order} onPress={() => navigation.navigate('OrderDetail', { orderId: order.id })} />)}
+        {!orders.length ? <View style={styles.noOrders}><Text style={styles.noOrdersText}>No orders here yet.</Text></View> : null}
+      </> : null}
 
-      {user.role !== 'customer' ? <>
+      {user.role === 'admin' ? <>
         <SectionTitle title="Team activity" />
         <View style={styles.activityCard}>
           {recentActivity.map((item, index) => {
